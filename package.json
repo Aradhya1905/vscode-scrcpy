@@ -1,0 +1,115 @@
+{
+  "name": "vscode-scrcpy",
+  "displayName": "VS Code Scrcpy",
+  "description": "Mirror Android device screen in VS Code using scrcpy",
+  "version": "1.0.0",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Aradhya1905/vscode-scrcpy.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
+  "keywords": [
+    "android",
+    "scrcpy",
+    "screen mirror",
+    "adb",
+    "mobile",
+    "device",
+    "emulator",
+    "screen cast",
+    "debug",
+    "phone"
+  ],
+  "icon": "images/icon.png",
+  "activationEvents": [
+    "onView:scrcpySidebar",
+    "onCommand:vscode-scrcpy.startMirror",
+    "onCommand:vscode-scrcpy.stopMirror",
+    "onCommand:vscode-scrcpy.openFileManager",
+    "onCommand:vscode-scrcpy.openShellLogs",
+    "onCommand:vscode-scrcpy.openLogcat"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscode-scrcpy.startMirror",
+        "title": "Scrcpy: Start Screen Mirror"
+      },
+      {
+        "command": "vscode-scrcpy.stopMirror",
+        "title": "Scrcpy: Stop Screen Mirror"
+      },
+      {
+        "command": "vscode-scrcpy.openFileManager",
+        "title": "Scrcpy: Open File Manager"
+      },
+      {
+        "command": "vscode-scrcpy.openShellLogs",
+        "title": "Scrcpy: Open ADB Shell & Logs"
+      },
+      {
+        "command": "vscode-scrcpy.openLogcat",
+        "title": "Scrcpy: Open Logcat"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vs_scrcpy",
+          "title": "VS_Scrcpy",
+          "icon": "$(device-mobile)"
+        }
+      ]
+    },
+    "views": {
+      "vs_scrcpy": [
+        {
+          "id": "scrcpySidebar",
+          "name": "Android Screen Mirror",
+          "type": "webview",
+          "icon": "$(device-mobile)"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run typecheck && npm run bundle -- --minify && npm run compile:webview",
+    "bundle": "node ./esbuild.js",
+    "package:vsix": "npx @vscode/vsce package --no-dependencies",
+    "build": "node ./scripts/build.js",
+    "typecheck": "tsc -p ./ --noEmit",
+    "compile": "npm run bundle && npm run compile:webview",
+    "compile:extension": "npm run bundle",
+    "compile:webview": "cd webview-ui && npm run build",
+    "watch": "npm run bundle -- --watch",
+    "watch:webview": "cd webview-ui && npm run dev",
+    "install:all": "npm install && cd webview-ui && npm install",
+    "lint": "eslint src --ext ts",
+    "format": "prettier --write \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\""
+  },
+  "devDependencies": {
+    "@yume-chan/adb": "^2.4.0",
+    "@yume-chan/adb-scrcpy": "^2.3.2",
+    "@yume-chan/adb-server-node-tcp": "^2.1.0",
+    "@yume-chan/scrcpy": "^2.3.0",
+    "@yume-chan/stream-extra": "^2.1.0",
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.7.4",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {}
+}

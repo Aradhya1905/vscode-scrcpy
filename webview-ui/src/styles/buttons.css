@@ -1,0 +1,89 @@
+/* ===== BUTTONS ===== */
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid var(--vsc-border);
+  border-radius: 6px;
+  color: var(--vsc-text);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--vsc-tertiary);
+  border-color: var(--vsc-blue);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--vsc-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--vsc-tertiary);
+  color: var(--vsc-text);
+}
+
+.btn-icon:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-icon.active {
+  color: var(--vsc-blue);
+}
+
+.btn-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-primary {
+  background: var(--vsc-blue);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #4a8fdf;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(88, 166, 255, 0.3);
+}
+
+.btn-secondary {
+  background: var(--vsc-border);
+  color: var(--vsc-text);
+}
+
+.btn-secondary:hover {
+  background: var(--vsc-text-muted);
+  color: var(--vsc-text);
+}

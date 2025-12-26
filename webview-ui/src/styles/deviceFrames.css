@@ -1,0 +1,167 @@
+/* ===== SAMSUNG NOTE20 ULTRA FRAME ===== */
+/* Aspect ratio: 77.2mm x 164.8mm = 0.4684 */
+.samsung-note20ultra-frame {
+  position: relative;
+  aspect-ratio: 77.2 / 164.8;
+  width: calc(var(--phone-height) * 0.4684);
+  border-radius: 12px;
+  padding: 0;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
+  overflow: visible;
+}
+
+.samsung-note20ultra-screen {
+  position: relative;
+  width: 100%;
+  height: var(--phone-height);
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid currentColor;
+}
+
+.samsung-note20ultra-camera-cutout {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #0a0a0a;
+  z-index: 10;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.samsung-note20ultra-active-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.samsung-note20ultra-active-screen > * {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.samsung-note20ultra-spen-slot {
+  position: absolute;
+  bottom: 15%;
+  left: -2px;
+  width: 2px;
+  height: 20px;
+  background: #333;
+  border-radius: 1px 0 0 1px;
+  z-index: 15;
+  opacity: 0.6;
+}
+
+.samsung-note20ultra-button-right {
+  position: absolute;
+  right: -2px;
+  top: 20%;
+  width: 2px;
+  height: 60px;
+  background: currentColor;
+  border-radius: 1px 0 0 1px;
+  z-index: 15;
+  opacity: 0.8;
+}
+
+.samsung-note20ultra-button-right-volume {
+  position: absolute;
+  right: -2px;
+  top: 30%;
+  width: 2px;
+  height: 80px;
+  background: currentColor;
+  border-radius: 1px 0 0 1px;
+  z-index: 15;
+  opacity: 0.8;
+}
+
+/* ===== SAMSUNG S20 FRAME ===== */
+/* Aspect ratio: 69.1mm x 151.7mm = 0.4555 */
+.samsung-s20-frame {
+  position: relative;
+  aspect-ratio: 69.1 / 151.7;
+  width: calc(var(--phone-height) * 0.4555);
+  border-radius: 10px;
+  padding: 0;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
+  overflow: visible;
+}
+
+.samsung-s20-screen {
+  position: relative;
+  width: 100%;
+  height: var(--phone-height);
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 3px solid currentColor;
+}
+
+.samsung-s20-camera-cutout {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0a0a0a;
+  z-index: 10;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.samsung-s20-active-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.samsung-s20-active-screen > * {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.samsung-s20-button-right {
+  position: absolute;
+  right: -2.5px;
+  top: 20%;
+  width: 2.5px;
+  height: 60px;
+  background: currentColor;
+  border-radius: 1px 0 0 1px;
+  z-index: 15;
+  opacity: 0.8;
+}
+
+.samsung-s20-button-right-volume {
+  position: absolute;
+  right: -2.5px;
+  top: 30%;
+  width: 2.5px;
+  height: 80px;
+  background: currentColor;
+  border-radius: 1px 0 0 1px;
+  z-index: 15;
+  opacity: 0.8;
+}

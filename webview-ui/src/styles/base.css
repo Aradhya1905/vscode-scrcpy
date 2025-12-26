@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap');
+
+/* ===== CSS VARIABLES ===== */
+:root {
+  /* VSCode Theme Colors */
+  --vsc-bg: #0d1117;
+  --vsc-secondary: #161b22;
+  --vsc-tertiary: #1c2128;
+  --vsc-border: #30363d;
+  --vsc-text: #e6edf3;
+  --vsc-text-muted: #8b949e;
+
+  /* Accent Colors */
+  --vsc-blue: #58a6ff;
+  --vsc-green: #3fb950;
+  --vsc-red: #f85149;
+  --vsc-purple: #bc8cff;
+  --vsc-yellow: #d29922;
+
+  /* Phone Frame Size */
+  --phone-width: 290px;
+  --phone-height: 630px;
+}
+
+/* ===== RESET & BASE STYLES ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+}
+
+html {
+  /* Cursor can show host gutters if the document doesn't paint edge-to-edge */
+  background: var(--vsc-bg);
+}
+
+body {
+  background-color: var(--vsc-bg);
+  color: var(--vsc-text);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  flex-direction: column;
+  /* Override any host-injected padding/margins (Cursor sometimes adds side gutters) */
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  /* Make the app full-bleed regardless of host layout/padding */
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--vsc-bg);
+}
+
+/* ===== CUSTOM SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vsc-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vsc-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vsc-text-muted);
+}
+
+/* ===== UTILITY CLASSES ===== */
+.hidden {
+  display: none !important;
+}
+
+/* Hide number input spinner */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Color input (remove default focus ring + rounded swatch) */
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  padding: 0;
+  background: transparent;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+input[type="color"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 8px;
+}
+
+/* Focus ring */
+.focus-ring:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--vsc-bg), 0 0 0 4px var(--vsc-blue);
+}
+
+/* ===== SHARED ANIMATIONS ===== */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== SPIN ANIMATION (icon rotation) ===== */
+@keyframes rotate360 {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.icon-spin {
+  display: inline-block;
+  transform-origin: center;
+  animation: rotate360 0.9s linear infinite;
+}

@@ -1,0 +1,67 @@
+/* ===== PHONE FRAME ===== */
+.phone-frame {
+  position: relative;
+  background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
+  border-radius: 40px;
+  padding: 8px;
+  box-shadow:
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 60px rgba(88, 166, 255, 0.1),
+    0 0 100px rgba(188, 140, 255, 0.05);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+.phone-screen {
+  position: relative;
+  width: var(--phone-width);
+  height: var(--phone-height);
+  background: #000;
+  border-radius: 32px;
+  overflow: hidden;
+}
+
+.phone-notch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 20px;
+  background: #000;
+  border-radius: 0 0 20px 20px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.phone-notch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vsc-tertiary);
+}
+
+.phone-buttons {
+  position: absolute;
+}
+
+.phone-button-right {
+  right: -4px;
+  width: 4px;
+  background: var(--vsc-tertiary);
+  border-radius: 2px 0 0 2px;
+}
+
+.phone-button-left {
+  left: -4px;
+  width: 4px;
+  background: var(--vsc-tertiary);
+  border-radius: 0 2px 2px 0;
+}

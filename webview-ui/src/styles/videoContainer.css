@@ -1,0 +1,59 @@
+/* ===== VIDEO CONTAINER ===== */
+.video-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--video-container-bg-gradient, radial-gradient(circle, rgba(238, 174, 202, 1) 0%, rgba(148, 187, 233, 1) 100%));
+  overflow: hidden;
+  position: relative;
+  order: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* When device skin is off, make video container full height with black background */
+.video-container.no-device-skin {
+  padding: 0;
+  align-items: stretch;
+  background: rgba(0, 0, 0, 1.0) !important;
+}
+
+.video-container.no-device-skin > .mirror-stage {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.video-container.no-device-skin .video-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.mirror-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== ACTIVE SCREEN (Video Canvas) ===== */
+.active-screen {
+  position: absolute;
+  inset: 0;
+}
+
+.video-canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  cursor: var(--video-canvas-cursor, crosshair);
+  touch-action: none;
+}
+
+.video-canvas:focus {
+  outline: 2px solid var(--vsc-blue);
+}

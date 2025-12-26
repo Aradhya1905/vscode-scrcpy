@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src {{cspSource}} 'unsafe-inline'; img-src {{cspSource}} data: blob:;">
+    <title>Android Screen Mirror</title>
+    <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+    <script>
+        window.__VSCODE_SCRCPY_VIEW_MODE__ = "{{viewMode}}";
+        window.__VSCODE_SCRCPY_INITIAL_STATE__ = {{initialState}};
+    </script>
+    <div id="root"></div>
+    <script src="{{scriptUri}}"></script>
+</body>
+</html>

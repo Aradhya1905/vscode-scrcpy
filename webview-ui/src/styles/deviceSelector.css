@@ -1,0 +1,239 @@
+/* ===== DEVICE SELECTOR ===== */
+.device-selector {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.device-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  background: rgba(22, 27, 34, 0.65);
+  border: 1px solid var(--vsc-border);
+  border-radius: 12px;
+  color: var(--vsc-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.device-selector-btn:hover {
+  background: rgba(28, 33, 40, 0.85);
+  border-color: rgba(88, 166, 255, 0.35);
+}
+
+.device-selector-btn:active {
+  transform: scale(0.95);
+}
+
+.device-selector-arrow {
+  flex: 0 0 auto;
+  color: var(--vsc-text-muted);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.device-selector-arrow.open {
+  transform: rotate(180deg);
+  color: var(--vsc-text);
+}
+
+.device-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.device-status-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.device-status-dot.connected {
+  background: var(--vsc-green);
+}
+
+.device-status-dot.connecting {
+  background: var(--vsc-yellow);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.device-status-dot.disconnected {
+  background: var(--vsc-text-muted);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.device-name {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--vsc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-device-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--vsc-secondary);
+  border: 1px solid var(--vsc-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  overflow: hidden;
+  min-width: 150px;
+  max-width: fit-content;
+  animation: slideUp 0.2s ease;
+}
+
+.device-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--vsc-secondary);
+  border: 1px solid var(--vsc-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  overflow: hidden;
+  animation: slideUp 0.2s ease;
+}
+
+.device-selector.open-down .device-dropdown {
+  bottom: auto;
+  top: calc(100% + 6px);
+  animation: slideDown 0.2s ease;
+}
+
+.device-selector.open-up .device-dropdown {
+  bottom: calc(100% + 6px);
+  top: auto;
+  animation: slideUp 0.2s ease;
+}
+
+.toolbar-at-top .device-dropdown {
+  bottom: auto;
+  top: calc(100% + 4px);
+  animation: slideDown 0.2s ease;
+}
+
+.device-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vsc-border);
+}
+
+.device-dropdown-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vsc-text-muted);
+}
+
+.device-dropdown-refresh {
+  border: 1px solid rgba(48, 54, 61, 0.75);
+  background: rgba(22, 27, 34, 0.55);
+  color: var(--vsc-text);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.device-dropdown-refresh:hover {
+  background: rgba(28, 33, 40, 0.85);
+  border-color: rgba(188, 140, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.device-dropdown-empty {
+  padding: 12px;
+}
+
+.device-dropdown-empty-title {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--vsc-text);
+}
+
+.device-dropdown-empty-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vsc-text-muted);
+  line-height: 1.35;
+}
+
+.device-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.device-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.device-item:hover {
+  background: var(--vsc-tertiary);
+}
+
+.device-item.selected {
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.device-item.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.device-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.device-item-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vsc-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-item-id {
+  font-size: 10px;
+  color: var(--vsc-text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

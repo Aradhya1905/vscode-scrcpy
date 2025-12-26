@@ -1,0 +1,331 @@
+/* ===== PANELS (Settings, More) ===== */
+.panel-overlay {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(22, 27, 34, 0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--vsc-border);
+  max-height: 70vh;
+  overflow-y: auto;
+  z-index: 99;
+  animation: slideUp 0.2s ease;
+}
+
+.toolbar-at-top .panel-overlay {
+  bottom: auto;
+  top: 100%;
+  border-top: none;
+  border-bottom: 1px solid var(--vsc-border);
+  animation: slideDown 0.2s ease;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vsc-border);
+}
+
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vsc-text);
+}
+
+.panel-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--vsc-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.panel-close-btn:hover {
+  background: var(--vsc-tertiary);
+  color: var(--vsc-text);
+}
+
+.panel-content {
+  padding: 16px;
+}
+
+/* ===== SETTINGS PANEL ===== */
+.settings-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.quick-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.quick-action-btn:hover {
+  background: var(--vsc-tertiary);
+}
+
+.quick-action-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #2C3038;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.quick-action-icon svg {
+  color: #D1D1D1;
+  transition: all 0.15s ease;
+}
+
+.quick-action-btn:hover .quick-action-icon {
+  background: #353A44;
+}
+
+.quick-action-btn:hover .quick-action-icon svg {
+  transform: scale(1.125);
+}
+
+.quick-action-btn:active .quick-action-icon {
+  background: rgba(88, 166, 255, 0.2);
+  border: 1px solid var(--vsc-blue);
+}
+
+.quick-action-btn:active .quick-action-icon svg {
+  color: var(--vsc-blue);
+  transform: scale(1.1);
+}
+
+.quick-action-label {
+  font-size: 11px;
+  color: #D1D1D1;
+  transition: color 0.15s ease;
+}
+
+.quick-action-btn:active .quick-action-label {
+  color: var(--vsc-text);
+}
+
+/* Toggle active state for buttons that maintain state */
+.quick-action-btn.active .quick-action-icon {
+  background: rgba(88, 166, 255, 0.2);
+  border: 1px solid var(--vsc-blue);
+}
+
+.quick-action-btn.active .quick-action-icon svg {
+  color: var(--vsc-blue);
+}
+
+.quick-action-btn.active .quick-action-label {
+  color: var(--vsc-blue);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.setting-item:hover {
+  background: rgba(48, 54, 61, 0.5);
+}
+
+.setting-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.setting-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--vsc-text-muted);
+}
+
+.setting-label {
+  font-size: 14px;
+  color: var(--vsc-text);
+}
+
+.setting-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--vsc-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+  position: relative;
+  width: 40px;
+  height: 24px;
+  background: var(--vsc-tertiary);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.toggle-switch.active {
+  background: var(--vsc-blue);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--vsc-text-muted);
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.toggle-switch.active .toggle-knob {
+  left: calc(100% - 22px);
+  background: white;
+}
+
+/* Dropdown */
+.dropdown-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--vsc-tertiary);
+  border: 1px solid var(--vsc-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  overflow: hidden;
+  animation: slideDown 0.2s ease;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.dropdown-item:hover {
+  background: var(--vsc-border);
+}
+
+.dropdown-item:active .dropdown-item-icon {
+  opacity: 1;
+}
+
+.dropdown-item:active .dropdown-item-icon svg {
+  opacity: 1;
+}
+
+.dropdown-item-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.dropdown-item-icon svg {
+  width: 12px;
+  height: 12px;
+  color: inherit;
+}
+
+.dropdown-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropdown-item-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vsc-text);
+}
+
+.dropdown-item-desc {
+  font-size: 11px;
+  margin-top: 2px;
+  color: var(--vsc-text-muted);
+}
+
+.dropdown-item-check {
+  width: 12px;
+  height: 12px;
+  color: var(--vsc-green);
+}
+
+/* Custom Input Section */
+.custom-input-section {
+  padding: 10px 12px;
+  border-top: 1px solid var(--vsc-border);
+}
+
+.custom-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--vsc-bg);
+  border: 1px solid var(--vsc-border);
+  border-radius: 4px;
+  color: var(--vsc-text);
+  font-size: 12px;
+}
+
+.custom-input:focus {
+  outline: none;
+  border-color: var(--vsc-blue);
+}

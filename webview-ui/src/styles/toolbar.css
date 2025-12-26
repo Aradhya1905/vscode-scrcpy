@@ -1,0 +1,66 @@
+/* ===== TOOLBAR SECTION (Bottom by default) ===== */
+.toolbar-container {
+  position: relative;
+  order: 2;
+  flex-shrink: 0;
+  transition: transform 0.3s ease-out;
+  z-index: 50;
+}
+
+.toolbar-container.toolbar-at-top {
+  order: 0;
+}
+
+.toolbar {
+  background: var(--vsc-secondary);
+  border-top: 1px solid var(--vsc-border);
+  padding: 6px 8px;
+}
+
+.toolbar.toolbar-at-top {
+  border-top: none;
+  border-bottom: 1px solid var(--vsc-border);
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* ===== TOOLBAR INDICATOR (for auto-hide) ===== */
+.toolbar-indicator {
+  position: absolute;
+  left: 8px;
+  bottom: 0;
+  cursor: pointer;
+  z-index: 40;
+  background: rgba(139, 148, 158, 0.5);
+  backdrop-filter: blur(4px);
+  padding: 2px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.toolbar-indicator:hover {
+  background: rgba(139, 148, 158, 0.7);
+}
+
+.toolbar-at-top .toolbar-indicator {
+  bottom: auto;
+  top: 0;
+}
+
+.toolbar-indicator svg {
+  width: 10px;
+  height: 10px;
+  color: var(--vsc-text);
+}
