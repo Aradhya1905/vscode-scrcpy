@@ -2,14 +2,14 @@
 
 Mirror your Android device screen directly in VS Code — with full touch control, file management, and ADB tools built-in.
 
-![VS Code Scrcpy - Screen Mirroring](images/hero-screenshot.jpg)
+![VS Code Scrcpy - Screen Mirroring](https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/hero-screenshot.jpg)
 
 ---
 
 ## Screenshots
 
 <p align="center">
-  <img src="images/screen-mirror.jpg" alt="Screen Mirroring" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/screen-mirror.jpg" alt="Screen Mirroring" />
   <br />
   <b>Screen Mirroring</b>
   <br />
@@ -17,7 +17,7 @@ Mirror your Android device screen directly in VS Code — with full touch contro
 </p>
 
 <p align="center">
-  <img src="images/MoreOptions.jpg" alt="More Options" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/MoreOptions.jpg" alt="More Options" />
   <br />
   <b>APK Installer,ADB logcat and Shell</b>
   <br />
@@ -25,7 +25,7 @@ Mirror your Android device screen directly in VS Code — with full touch contro
 </p>
 
 <p align="center">
-  <img src="images/device-controls.jpg" alt="Device Controls" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/device-controls.jpg" alt="Device Controls" />
   <br />
   <b>Device Controls</b>
   <br />
@@ -33,7 +33,7 @@ Mirror your Android device screen directly in VS Code — with full touch contro
 </p>
 
 <p align="center">
-  <img src="images/settings.jpg" alt="Settings" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/settings.jpg" alt="Settings" />
   <br />
   <b>Settings</b>
   <br />
@@ -41,7 +41,7 @@ Mirror your Android device screen directly in VS Code — with full touch contro
 </p>
 
 <p align="center">
-  <img src="images/file-manager.jpg" alt="File Manager" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/file-manager.jpg" alt="File Manager" />
   <br />
   <b>File Manager</b>
   <br />
@@ -49,7 +49,7 @@ Mirror your Android device screen directly in VS Code — with full touch contro
 </p>
 
 <p align="center">
-  <img src="images/adb-shell.jpg" alt="ADB Shell & Commands" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/adb-shell.jpg" alt="ADB Shell & Commands" />
   <br />
   <b>ADB Shell & Commands</b>
   <br />
@@ -57,7 +57,7 @@ Mirror your Android device screen directly in VS Code — with full touch contro
 </p>
 
 <p align="center">
-  <img src="images/logcat.jpg" alt="Logcat Viewer" />
+  <img src="https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/logcat.jpg" alt="Logcat Viewer" />
   <br />
   <b>Logcat Viewer</b>
   <br />
