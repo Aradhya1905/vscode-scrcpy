@@ -34,6 +34,8 @@ async function main() {
     if (watch) {
         console.log('ESBUILD_WATCH_START');
         const ctx = await esbuild.context(buildOptions);
+        // Ensure an initial build completes before VS Code considers the watch task "ready".
+        await ctx.rebuild();
         await ctx.watch();
         console.log('ESBUILD_WATCH_READY');
         return;

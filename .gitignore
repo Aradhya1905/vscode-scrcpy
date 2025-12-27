@@ -52,3 +52,5 @@ coverage/
 # Package lock files (optional - uncomment if you prefer not to commit)
 # package-lock.json
 # yarn.lock
+
+/docs_plans

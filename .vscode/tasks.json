@@ -6,10 +6,17 @@
             "script": "watch",
             "problemMatcher": {
                 "owner": "esbuild",
+                "fileLocation": [
+                    "relative",
+                    "${workspaceFolder}"
+                ],
                 "pattern": [
                     {
-                        "regexp": "^(.*)$",
-                        "message": 1
+                        "regexp": "^((?:[A-Za-z]:)?[^:]+):(\\d+):(\\d+):\\s*(?:ERROR|WARN|WARNING|error|warning):\\s*(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "message": 4
                     }
                 ],
                 "background": {
