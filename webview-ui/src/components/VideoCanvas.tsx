@@ -49,6 +49,20 @@ export const VideoCanvas = memo(function VideoCanvas({
     const cachedRectRef = useRef<DOMRect | null>(null);
     const lastRectUpdateRef = useRef(0);
 
+    // Memoized rendering geometry to avoid recalculating on every touch event
+    const renderGeometryRef = useRef<{
+        videoWidth: number;
+        videoHeight: number;
+        canvasWidth: number;
+        canvasHeight: number;
+        renderedWidth: number;
+        renderedHeight: number;
+        offsetX: number;
+        offsetY: number;
+        scaleX: number;
+        scaleY: number;
+    } | null>(null);
+
     // RAF-based touch throttling
     const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
     const rafIdRef = useRef<number | null>(null);
@@ -86,6 +100,7 @@ export const VideoCanvas = memo(function VideoCanvas({
     useEffect(() => {
         const observer = new ResizeObserver(() => {
             cachedRectRef.current = null;
+            renderGeometryRef.current = null; // Also invalidate render geometry
         });
         if (internalCanvasRef.current) {
             observer.observe(internalCanvasRef.current);
@@ -97,6 +112,7 @@ export const VideoCanvas = memo(function VideoCanvas({
     useEffect(() => {
         if (invalidateCacheKey !== undefined) {
             cachedRectRef.current = null;
+            renderGeometryRef.current = null; // Also invalidate render geometry
             lastRectUpdateRef.current = 0;
             // Force immediate rect update on next interaction
             if (internalCanvasRef.current) {
@@ -109,34 +125,75 @@ export const VideoCanvas = memo(function VideoCanvas({
         }
     }, [invalidateCacheKey]);
 
+    // Update cached render geometry when video or canvas size changes
+    const updateRenderGeometry = useCallback(() => {
+        const videoSize = getVideoSize();
+        const canvasRect = getCachedRect();
+
+        if (!canvasRect || videoSize.width === 0 || videoSize.height === 0) {
+            renderGeometryRef.current = null;
+            return;
+        }
+
+        // Check if we need to recalculate
+        const cached = renderGeometryRef.current;
+        if (
+            cached &&
+            cached.videoWidth === videoSize.width &&
+            cached.videoHeight === videoSize.height &&
+            cached.canvasWidth === canvasRect.width &&
+            cached.canvasHeight === canvasRect.height
+        ) {
+            return; // No change, use cached values
+        }
+
+        // Calculate the actual rendered video size (accounting for object-fit: contain)
+        const videoAspect = videoSize.width / videoSize.height;
+        const canvasAspect = canvasRect.width / canvasRect.height;
+
+        let renderedWidth: number;
+        let renderedHeight: number;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        if (videoAspect > canvasAspect) {
+            // Video is wider - fit to width
+            renderedWidth = canvasRect.width;
+            renderedHeight = canvasRect.width / videoAspect;
+            offsetY = (canvasRect.height - renderedHeight) / 2;
+        } else {
+            // Video is taller - fit to height
+            renderedHeight = canvasRect.height;
+            renderedWidth = canvasRect.height * videoAspect;
+            offsetX = (canvasRect.width - renderedWidth) / 2;
+        }
+
+        renderGeometryRef.current = {
+            videoWidth: videoSize.width,
+            videoHeight: videoSize.height,
+            canvasWidth: canvasRect.width,
+            canvasHeight: canvasRect.height,
+            renderedWidth,
+            renderedHeight,
+            offsetX,
+            offsetY,
+            scaleX: videoSize.width / renderedWidth,
+            scaleY: videoSize.height / renderedHeight,
+        };
+    }, [getVideoSize, getCachedRect]);
+
     const getDeviceCoordinates = useCallback(
         (canvasX: number, canvasY: number) => {
-            const videoSize = getVideoSize();
-            const canvasRect = getCachedRect();
-            if (!canvasRect || videoSize.width === 0 || videoSize.height === 0) {
+            // Ensure geometry is up to date
+            updateRenderGeometry();
+
+            const geometry = renderGeometryRef.current;
+            if (!geometry) {
                 return { x: 0, y: 0 };
             }
 
-            // Calculate the actual rendered video size (accounting for object-fit: contain)
-            const videoAspect = videoSize.width / videoSize.height;
-            const canvasAspect = canvasRect.width / canvasRect.height;
-
-            let renderedWidth: number;
-            let renderedHeight: number;
-            let offsetX = 0;
-            let offsetY = 0;
-
-            if (videoAspect > canvasAspect) {
-                // Video is wider - fit to width
-                renderedWidth = canvasRect.width;
-                renderedHeight = canvasRect.width / videoAspect;
-                offsetY = (canvasRect.height - renderedHeight) / 2;
-            } else {
-                // Video is taller - fit to height
-                renderedHeight = canvasRect.height;
-                renderedWidth = canvasRect.height * videoAspect;
-                offsetX = (canvasRect.width - renderedWidth) / 2;
-            }
+            // Use cached geometry values for coordinate calculation
+            const { renderedWidth, renderedHeight, offsetX, offsetY, scaleX, scaleY, videoWidth, videoHeight } = geometry;
 
             // Adjust coordinates to account for letterboxing/pillarboxing
             const adjustedX = canvasX - offsetX;
@@ -146,19 +203,16 @@ export const VideoCanvas = memo(function VideoCanvas({
             const clampedX = Math.max(0, Math.min(adjustedX, renderedWidth));
             const clampedY = Math.max(0, Math.min(adjustedY, renderedHeight));
 
-            // Map to device coordinates
-            const scaleX = videoSize.width / renderedWidth;
-            const scaleY = videoSize.height / renderedHeight;
-
+            // Map to device coordinates using cached scale factors
             const deviceX = Math.round(clampedX * scaleX);
             const deviceY = Math.round(clampedY * scaleY);
 
             return {
-                x: Math.max(0, Math.min(deviceX, videoSize.width - 1)),
-                y: Math.max(0, Math.min(deviceY, videoSize.height - 1)),
+                x: Math.max(0, Math.min(deviceX, videoWidth - 1)),
+                y: Math.max(0, Math.min(deviceY, videoHeight - 1)),
             };
         },
-        [getVideoSize, getCachedRect]
+        [updateRenderGeometry]
     );
 
     const sendTouchEvent = useCallback(

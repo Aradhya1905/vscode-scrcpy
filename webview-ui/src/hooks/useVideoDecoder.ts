@@ -102,6 +102,13 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
     // Pre-allocated buffer for base64 decoding to reduce GC pressure
     const decodeBufferRef = useRef<Uint8Array | null>(null);
 
+    // Frame skipping metrics for backpressure handling
+    const droppedFramesRef = useRef(0);
+    const lastDropLogTimeRef = useRef(0);
+
+    // Maximum decode queue size before we start dropping non-keyframes
+    const MAX_DECODE_QUEUE_SIZE = 3;
+
     const setCanvas = useCallback((canvas: HTMLCanvasElement | null) => {
         canvasRef.current = canvas;
         // Use 'low-latency' rendering hint for better performance
@@ -239,7 +246,59 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
                 return;
             }
 
+            // Check if decoder needs recovery
             if (!decoderRef.current || decoderRef.current.state !== 'configured') {
+                // Only attempt recovery on keyframes (need SPS/PPS to reconfigure)
+                if (hasKeyframe && spsNalRef.current && ppsNalRef.current) {
+                    onLog('Decoder in bad state, attempting recovery...', 'warn');
+                    // Close old decoder if it exists
+                    if (decoderRef.current && decoderRef.current.state !== 'closed') {
+                        try {
+                            decoderRef.current.close();
+                        } catch {
+                            // Ignore close errors
+                        }
+                    }
+                    decoderRef.current = null;
+                    decoderConfiguredRef.current = false;
+                    // Reconfigure with current SPS/PPS
+                    if (configureDecoder(spsNalRef.current, ppsNalRef.current)) {
+                        decoderConfiguredRef.current = true;
+                        startTimeRef.current = performance.now();
+                        lastFrameTimeRef.current = 0;
+                        onLog('Decoder recovered successfully', 'info');
+                    } else {
+                        onLog('Decoder recovery failed', 'error');
+                        return;
+                    }
+                } else {
+                    // Can't recover without a keyframe, skip this frame
+                    return;
+                }
+            }
+
+            // After recovery, decoder must be valid
+            const decoder = decoderRef.current;
+            if (!decoder) {
+                return;
+            }
+
+            // Check decoder queue depth for backpressure handling
+            const queueSize = decoder.decodeQueueSize;
+            if (queueSize > MAX_DECODE_QUEUE_SIZE && !hasKeyframe) {
+                // Drop non-keyframes when decoder is overloaded
+                droppedFramesRef.current++;
+
+                // Log dropped frames periodically (at most once per second)
+                const now = performance.now();
+                if (now - lastDropLogTimeRef.current > 1000) {
+                    onLog(
+                        `Decoder backpressure: dropped ${droppedFramesRef.current} non-keyframes (queue: ${queueSize})`,
+                        'warn'
+                    );
+                    droppedFramesRef.current = 0;
+                    lastDropLogTimeRef.current = now;
+                }
                 return;
             }
 
@@ -288,7 +347,7 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
                     data: accessUnit,
                 });
 
-                decoderRef.current.decode(chunk);
+                decoder.decode(chunk);
             } catch (e) {
                 onLog(`Decode error: ${(e as Error).message}`, 'error');
             }
@@ -304,6 +363,8 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         startTimeRef.current = null;
         lastFrameTimeRef.current = 0;
         videoSizeRef.current = { width: 0, height: 0 };
+        droppedFramesRef.current = 0;
+        lastDropLogTimeRef.current = 0;
         // Keep decodeBufferRef for reuse
 
         if (decoderRef.current && decoderRef.current.state !== 'closed') {

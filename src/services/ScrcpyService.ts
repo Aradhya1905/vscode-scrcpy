@@ -10,10 +10,12 @@ import {
     AndroidMotionEventAction,
     AndroidMotionEventButton,
     AndroidScreenPowerMode,
+    ScrcpyCodecOptions,
     ScrcpyControlMessageWriter,
     ScrcpyMediaStreamPacket,
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
+
 
 export interface ScrcpyServiceEvents {
     onVideoData: (data: Buffer) => void;
@@ -40,6 +42,7 @@ export class ScrcpyService {
     private videoHeight = 0;
     private extensionPath: string;
     private settings: ScrcpySettings = {};
+    private streamAbortController: AbortController | null = null;
 
     constructor(events: ScrcpyServiceEvents, extensionPath: string) {
         this.events = events;
@@ -86,10 +89,11 @@ export class ScrcpyService {
             // Step 4: Push scrcpy server to device
             await this.pushServer();
 
+            // Set running flag BEFORE starting scrcpy so video stream loop works
+            this.isRunning = true;
+
             // Step 5: Start scrcpy
             await this.startScrcpy();
-
-            this.isRunning = true;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             console.error('Failed to start scrcpy:', errorMessage);
@@ -143,6 +147,10 @@ export class ScrcpyService {
             sendFrameMeta: true,
             sendDummyByte: true,
             sendCodecMeta: true,
+            // Low-latency codec options
+            videoCodecOptions: new ScrcpyCodecOptions({
+                maxBframes: 0,
+            }),
         });
 
         // Start scrcpy client
@@ -195,25 +203,93 @@ export class ScrcpyService {
     private async processVideoStream(
         stream: ReadableStream<ScrcpyMediaStreamPacket>
     ): Promise<void> {
+        // Create abort controller for this stream session
+        this.streamAbortController = new AbortController();
+        const abortSignal = this.streamAbortController.signal;
+
         try {
             const reader = stream.getReader();
             let packetCount = 0;
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    break;
-                }
+            // Wrap reader.read() with timeout to prevent infinite hang
+            const readWithTimeout = async (
+                timeoutMs: number = 10000
+            ): Promise<{ done: boolean; value?: ScrcpyMediaStreamPacket }> => {
+                return new Promise((resolve, reject) => {
+                    // Check if already aborted
+                    if (abortSignal.aborted) {
+                        reject(new Error('Stream aborted'));
+                        return;
+                    }
 
-                packetCount++;
+                    const timeoutId = setTimeout(() => {
+                        reject(new Error('Video stream read timeout'));
+                    }, timeoutMs);
 
-                // Send video data to webview
-                if (value.data) {
-                    this.events.onVideoData(Buffer.from(value.data));
+                    // Listen for abort signal
+                    const abortHandler = () => {
+                        clearTimeout(timeoutId);
+                        reject(new Error('Stream aborted'));
+                    };
+                    abortSignal.addEventListener('abort', abortHandler, { once: true });
+
+                    reader
+                        .read()
+                        .then((result) => {
+                            clearTimeout(timeoutId);
+                            abortSignal.removeEventListener('abort', abortHandler);
+                            resolve(result);
+                        })
+                        .catch((err) => {
+                            clearTimeout(timeoutId);
+                            abortSignal.removeEventListener('abort', abortHandler);
+                            reject(err);
+                        });
+                });
+            };
+
+            while (this.isRunning) {
+                try {
+                    const { done, value } = await readWithTimeout(10000); // 10 second timeout
+                    if (done || !value) {
+                        break;
+                    }
+
+                    packetCount++;
+
+                    // Send video data to webview
+                    if (value.data) {
+                        this.events.onVideoData(Buffer.from(value.data));
+                    }
+                } catch (readError) {
+                    if (readError instanceof Error) {
+                        // On abort, exit the loop
+                        if (readError.message.includes('aborted')) {
+                            console.warn('Video stream aborted');
+                            break;
+                        }
+                        // On timeout, just continue - device might be idle
+                        if (readError.message.includes('timeout')) {
+                            // Don't log every timeout to avoid spam
+                            continue;
+                        }
+                    }
+                    throw readError;
                 }
             }
+
+            // Release the reader lock
+            try {
+                reader.releaseLock();
+            } catch {
+                // Ignore if already released
+            }
         } catch (error) {
-            console.error('Error processing video stream:', error);
+            if (this.isRunning) {
+                console.error('Error processing video stream:', error);
+            }
+        } finally {
+            this.streamAbortController = null;
         }
     }
 
@@ -376,6 +452,12 @@ export class ScrcpyService {
     stop(): void {
         this.isRunning = false;
         this.currentDeviceId = null;
+
+        // Abort any pending stream reads
+        if (this.streamAbortController) {
+            this.streamAbortController.abort();
+            this.streamAbortController = null;
+        }
 
         if (this.controller) {
             this.controller.close().catch(console.error);

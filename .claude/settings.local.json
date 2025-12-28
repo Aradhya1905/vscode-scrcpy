@@ -19,7 +19,13 @@
       "Bash(C:/Scrcpy/scrcpy.exe:*)",
       "Bash(npx tsc:*)",
       "Bash(ls:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(xargs:*)",
+      "Bash(dir /s \"c:\\\\MyProjects\\\\VsCodeScrcpy\")",
+      "Bash(tree:*)",
+      "Bash(dir /b \"c:\\\\MyProjects\\\\VsCodeScrcpy\\\\.claude\")",
+      "Bash(npm ls:*)",
+      "Bash(npm run typecheck:*)"
     ],
     "deny": [],
     "ask": []

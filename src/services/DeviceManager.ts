@@ -1,6 +1,26 @@
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import * as vscode from 'vscode';
 import { AdbPathResolver } from './AdbPathResolver';
+
+// Helper to kill a process and its children on all platforms
+function killProcessTree(pid: number): void {
+    try {
+        if (process.platform === 'win32') {
+            // On Windows, use taskkill to kill the process tree
+            exec(`taskkill /PID ${pid} /T /F`, { windowsHide: true });
+        } else {
+            // On Unix, kill the process group
+            try {
+                process.kill(-pid, 'SIGKILL');
+            } catch {
+                // If process group kill fails, try regular kill
+                process.kill(pid, 'SIGKILL');
+            }
+        }
+    } catch {
+        // Ignore errors if process is already dead
+    }
+}
 
 export interface DeviceListItem {
     id: string;
@@ -20,11 +40,40 @@ export class DeviceManager {
     private currentDeviceId: string | null = null;
     private _nameCache = new Map<string, { name: string; model?: string; ts: number }>();
 
+    // Cache configuration
+    private static readonly CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+    private static readonly MAX_CACHE_SIZE = 50; // Maximum number of cached devices
+
     constructor(context: vscode.ExtensionContext, events: DeviceManagerEvents) {
         this.context = context;
         this.events = events;
         // Load last selected device from storage
         this.currentDeviceId = this.context.globalState.get<string>('scrcpy.lastDeviceId') || null;
+    }
+
+    // Clean up expired cache entries and enforce size limit (LRU eviction)
+    private _cleanupCache(): void {
+        const now = Date.now();
+
+        // Remove expired entries
+        for (const [id, entry] of this._nameCache.entries()) {
+            if (now - entry.ts > DeviceManager.CACHE_EXPIRY_MS) {
+                this._nameCache.delete(id);
+            }
+        }
+
+        // If still too large, remove oldest entries (LRU eviction)
+        if (this._nameCache.size > DeviceManager.MAX_CACHE_SIZE) {
+            const entries = Array.from(this._nameCache.entries());
+            // Sort by timestamp (oldest first)
+            entries.sort((a, b) => a[1].ts - b[1].ts);
+
+            // Remove oldest entries until we're under the limit
+            const toRemove = entries.length - DeviceManager.MAX_CACHE_SIZE;
+            for (let i = 0; i < toRemove; i++) {
+                this._nameCache.delete(entries[i][0]);
+            }
+        }
     }
 
     private _titleCase(s: string): string {
@@ -35,7 +84,10 @@ export class DeviceManager {
 
     private _runAdb(args: string[], timeoutMs = 1500): Promise<string> {
         return new Promise((resolve) => {
-            const adb = spawn(AdbPathResolver.getAdbCommand(), args, { windowsHide: true });
+            const adb = spawn(AdbPathResolver.getAdbCommand(), args, {
+                windowsHide: true,
+                detached: process.platform !== 'win32', // Enable process group on Unix for proper cleanup
+            });
             let output = '';
             let resolved = false;
 
@@ -46,10 +98,8 @@ export class DeviceManager {
             };
 
             const timer = setTimeout(() => {
-                try {
-                    adb.kill();
-                } catch {
-                    // ignore
+                if (adb.pid) {
+                    killProcessTree(adb.pid);
                 }
                 finish(output.trim());
             }, timeoutMs);
@@ -133,21 +183,45 @@ export class DeviceManager {
         return new Promise((resolve, reject) => {
             const adb = spawn(AdbPathResolver.getAdbCommand(), ['devices', '-l'], {
                 windowsHide: true,
+                detached: process.platform !== 'win32',
             });
             let output = '';
+            let resolved = false;
+
+            // Add timeout protection for the enumerate operation
+            const timeoutId = setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    if (adb.pid) {
+                        killProcessTree(adb.pid);
+                    }
+                    resolve([]); // Return empty list on timeout
+                }
+            }, 5000); // 5 second timeout for device enumeration
 
             adb.stdout.on('data', (data) => {
                 output += data.toString();
             });
 
             adb.on('close', async (code) => {
+                if (resolved) return;
+                clearTimeout(timeoutId);
+
                 if (code !== 0) {
+                    resolved = true;
                     reject(new Error('Failed to enumerate devices'));
                     return;
                 }
 
                 const devices: DeviceListItem[] = [];
                 const lines = output.split('\n').slice(1); // Skip header
+
+                // Collect device info for parallel name resolution
+                const deviceInfos: Array<{
+                    id: string;
+                    status: 'device' | 'unauthorized' | 'offline';
+                    model?: string;
+                }> = [];
 
                 for (const line of lines) {
                     const trimmed = line.trim();
@@ -168,33 +242,55 @@ export class DeviceManager {
                         }
                     }
 
+                    deviceInfos.push({ id, status, model });
+                }
+
+                // Clean up expired cache entries before processing
+                this._cleanupCache();
+
+                // Resolve names in parallel for devices that need resolution
+                const now = Date.now();
+                const resolvePromises = deviceInfos.map(async ({ id, status, model }) => {
                     let name = model || id;
+
                     if (status === 'device') {
                         const cached = this._nameCache.get(id);
-                        const now = Date.now();
-                        if (cached && now - cached.ts < 5 * 60 * 1000) {
+                        if (cached && now - cached.ts < DeviceManager.CACHE_EXPIRY_MS) {
                             name = cached.name || name;
                             model = cached.model || model;
                         } else {
-                            const resolved = await this._resolveDeviceName(id, model);
-                            name = resolved.name || name;
-                            model = resolved.model || model;
-                            this._nameCache.set(id, { name, model, ts: now });
+                            try {
+                                const resolvedInfo = await this._resolveDeviceName(id, model);
+                                name = resolvedInfo.name || name;
+                                model = resolvedInfo.model || model;
+                                this._nameCache.set(id, { name, model, ts: now });
+                            } catch {
+                                // Use fallback name on error
+                            }
                         }
                     }
 
-                    devices.push({
-                        id,
-                        name,
-                        model,
-                        status,
-                    });
+                    return { id, name, model, status };
+                });
+
+                try {
+                    const resolvedDevices = await Promise.all(resolvePromises);
+                    devices.push(...resolvedDevices);
+                } catch {
+                    // If parallel resolution fails, use basic info
+                    for (const { id, status, model } of deviceInfos) {
+                        devices.push({ id, name: model || id, model, status });
+                    }
                 }
 
+                resolved = true;
                 resolve(devices);
             });
 
             adb.on('error', (err) => {
+                if (resolved) return;
+                resolved = true;
+                clearTimeout(timeoutId);
                 reject(new Error(`ADB error: ${err.message}`));
             });
         });

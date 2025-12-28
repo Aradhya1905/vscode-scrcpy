@@ -1,0 +1,16 @@
+{
+  "$schema": "https://claude.ai/code/settings-schema.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const fs=require('fs'); const p='$CLAUDE_FILE_PATH'; if(p && (p.endsWith('.ts') || p.endsWith('.tsx'))) { const {execSync}=require('child_process'); try { execSync('npx prettier --write ' + JSON.stringify(p), {stdio:'pipe'}); console.log('Formatted: ' + p); } catch(e) {} }\""
+          }
+        ]
+      }
+    ]
+  }
+}

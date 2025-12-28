@@ -21,12 +21,16 @@ export class ScrcpySidebarView {
     private _disposables: vscode.Disposable[] = [];
     private _scrcpyService: ScrcpyService | null = null;
     private _videoBuffer: Buffer[] = [];
+    private _videoBufferSize: number = 0; // Track total buffer size in bytes
     private _sendVideoTimeout: NodeJS.Timeout | null = null;
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _appManager: AppManager | null = null;
     private _wasStreamingBeforeHidden: boolean = false;
     private _adbShellService: AdbShellService;
+
+    // Maximum buffer size before dropping frames (2MB)
+    private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
 
     public static revive(webviewView: vscode.WebviewView, context: vscode.ExtensionContext) {
         ScrcpySidebarView.currentView = new ScrcpySidebarView(webviewView, context);
@@ -116,7 +120,20 @@ export class ScrcpySidebarView {
                         this._wasStreamingBeforeHidden = false;
                         // Small delay to let ADB settle after previous stop
                         await new Promise((resolve) => setTimeout(resolve, 500));
-                        await this._startStreaming();
+                        try {
+                            await this._startStreaming();
+                        } catch (error) {
+                            const errorMessage =
+                                error instanceof Error ? error.message : String(error);
+                            console.error('Failed to resume streaming:', errorMessage);
+                            vscode.window.showErrorMessage(
+                                `Failed to resume streaming: ${errorMessage}`
+                            );
+                            this._view.webview.postMessage({
+                                type: 'error',
+                                message: `Failed to resume streaming: ${errorMessage}`,
+                            });
+                        }
                     } else {
                         // Only refresh device list if not auto-resuming streaming
                         this._deviceManager?.refreshDeviceList();
@@ -348,13 +365,28 @@ export class ScrcpySidebarView {
             {
                 onVideoData: (data) => {
                     // Buffer video data and send in batches for better performance
+                    // Check buffer size limit to prevent unbounded memory growth
+                    if (
+                        this._videoBufferSize + data.length >
+                        ScrcpySidebarView.MAX_VIDEO_BUFFER_SIZE
+                    ) {
+                        // Buffer is too large, drop old frames to make room
+                        console.warn(
+                            `Video buffer exceeded ${ScrcpySidebarView.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`
+                        );
+                        this._videoBuffer = [];
+                        this._videoBufferSize = 0;
+                    }
+
                     this._videoBuffer.push(data);
+                    this._videoBufferSize += data.length;
 
                     if (!this._sendVideoTimeout) {
                         this._sendVideoTimeout = setTimeout(() => {
                             if (this._videoBuffer.length > 0) {
                                 const combined = Buffer.concat(this._videoBuffer);
                                 this._videoBuffer = [];
+                                this._videoBufferSize = 0;
                                 // Use base64 encoding instead of Array.from() for much better performance
                                 this._view.webview.postMessage({
                                     type: 'video',
@@ -408,6 +440,7 @@ export class ScrcpySidebarView {
             this._sendVideoTimeout = null;
         }
         this._videoBuffer = [];
+        this._videoBufferSize = 0;
         this._scrcpyService?.stop();
         this._scrcpyService = null;
     }

@@ -19,10 +19,14 @@ export class ScrcpyPanel {
     private _disposables: vscode.Disposable[] = [];
     private _scrcpyService: ScrcpyService | null = null;
     private _videoBuffer: Buffer[] = [];
+    private _videoBufferSize: number = 0; // Track total buffer size in bytes
     private _sendVideoTimeout: NodeJS.Timeout | null = null;
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _adbShellService: AdbShellService;
+
+    // Maximum buffer size before dropping frames (2MB)
+    private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
 
     public static createOrShow(context: vscode.ExtensionContext) {
         const column = vscode.window.activeTextEditor
@@ -300,13 +304,28 @@ export class ScrcpyPanel {
             {
                 onVideoData: (data) => {
                     // Buffer video data and send in batches for better performance
+                    // Check buffer size limit to prevent unbounded memory growth
+                    if (
+                        this._videoBufferSize + data.length >
+                        ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE
+                    ) {
+                        // Buffer is too large, drop old frames to make room
+                        console.warn(
+                            `Video buffer exceeded ${ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`
+                        );
+                        this._videoBuffer = [];
+                        this._videoBufferSize = 0;
+                    }
+
                     this._videoBuffer.push(data);
+                    this._videoBufferSize += data.length;
 
                     if (!this._sendVideoTimeout) {
                         this._sendVideoTimeout = setTimeout(() => {
                             if (this._videoBuffer.length > 0) {
                                 const combined = Buffer.concat(this._videoBuffer);
                                 this._videoBuffer = [];
+                                this._videoBufferSize = 0;
                                 // Use base64 encoding instead of Array.from() for much better performance
                                 // base64 is ~33% larger but avoids the massive overhead of JSON serializing arrays
                                 this._panel.webview.postMessage({
@@ -359,6 +378,7 @@ export class ScrcpyPanel {
             this._sendVideoTimeout = null;
         }
         this._videoBuffer = [];
+        this._videoBufferSize = 0;
         this._scrcpyService?.stop();
         this._scrcpyService = null;
     }
