@@ -249,6 +249,9 @@ export class ScrcpySidebarView {
                     case 'dark-mode':
                         await this._handleDarkMode(message.enabled);
                         break;
+                    case 'paste':
+                        await this._handlePaste(message.text);
+                        break;
                 }
             },
             null,
@@ -610,6 +613,36 @@ export class ScrcpySidebarView {
 
         // Toggle device screen: 0 = off, 2 = normal
         this._scrcpyService.setScreenPowerMode(screenOff ? 0 : 2);
+    }
+
+    private async _handlePaste(text: string): Promise<void> {
+        console.log('[ScrcpySidebarView] _handlePaste called', {
+            textLength: text?.length ?? 0,
+            textPreview: text?.substring(0, 50) ?? 'null',
+            hasScrcpyService: !!this._scrcpyService,
+            isActive: this._scrcpyService?.isActive() ?? false,
+        });
+
+        if (!this._scrcpyService || !this._scrcpyService.isActive()) {
+            console.log('[ScrcpySidebarView] _handlePaste aborted - service not active');
+            vscode.window.showWarningMessage('Connect to a device before pasting text.');
+            return;
+        }
+
+        if (!text || text.length === 0) {
+            console.log('[ScrcpySidebarView] _handlePaste aborted - empty text');
+            return;
+        }
+
+        try {
+            console.log('[ScrcpySidebarView] Calling scrcpyService.pasteText...');
+            await this._scrcpyService.pasteText(text);
+            console.log('[ScrcpySidebarView] pasteText completed successfully');
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            console.error('[ScrcpySidebarView] pasteText failed:', msg);
+            vscode.window.showErrorMessage(`Failed to paste text: ${msg}`);
+        }
     }
 
     private async _handleShowTouches(enabled: boolean): Promise<void> {

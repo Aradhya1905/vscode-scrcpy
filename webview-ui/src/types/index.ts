@@ -130,6 +130,11 @@ export interface ScrollEventData {
     videoHeight: number;
 }
 
+export interface PasteEventData {
+    command: 'paste';
+    text: string;
+}
+
 export interface ScrcpySettings {
     maxSize?: number;
     maxFps?: number;
@@ -185,7 +190,8 @@ export type WebviewMessage =
     | { command: 'logcat-get-packages' }
     | TouchEventData
     | KeyEventData
-    | ScrollEventData;
+    | ScrollEventData
+    | PasteEventData;
 
 export type ExtensionMessage =
     | { type: 'connecting' }

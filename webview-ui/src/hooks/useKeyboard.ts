@@ -109,9 +109,10 @@ interface UseKeyboardOptions {
     isConnected: boolean;
     onKeyEvent: (action: 'down' | 'up', keyCode: number, metaState: number) => void;
     onLog: (message: string) => void;
+    onPasteRequest?: () => void;
 }
 
-export function useKeyboard({ isConnected, onKeyEvent }: UseKeyboardOptions) {
+export function useKeyboard({ isConnected, onKeyEvent, onPasteRequest }: UseKeyboardOptions) {
     const modifierStateRef = useRef(0);
     const lastKeyTimeRef = useRef<Map<string, number>>(new Map());
     const pendingKeyEventsRef = useRef<
@@ -190,6 +191,16 @@ export function useKeyboard({ isConnected, onKeyEvent }: UseKeyboardOptions) {
         (event: React.KeyboardEvent) => {
             if (!isConnected) return;
 
+            // Intercept Ctrl+V / Cmd+V for paste
+            if ((event.ctrlKey || event.metaKey) && event.code === 'KeyV') {
+                console.log('[useKeyboard] Ctrl+V detected, triggering paste request');
+                event.preventDefault();
+                if (onPasteRequest) {
+                    onPasteRequest();
+                }
+                return;
+            }
+
             // Update modifier state
             let newMetaState = modifierStateRef.current;
             if (event.shiftKey !== ((modifierStateRef.current & AndroidKeyEventMeta.Shift) !== 0)) {
@@ -212,7 +223,7 @@ export function useKeyboard({ isConnected, onKeyEvent }: UseKeyboardOptions) {
                 queueKeyEvent('down', androidKeyCode, newMetaState, event.code);
             }
         },
-        [isConnected, queueKeyEvent, updateModifierState]
+        [isConnected, queueKeyEvent, updateModifierState, onPasteRequest]
     );
 
     const handleKeyUp = useCallback(

@@ -16,7 +16,6 @@ import {
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
 
-
 export interface ScrcpyServiceEvents {
     onVideoData: (data: Buffer) => void;
     onError: (error: string) => void;
@@ -503,6 +502,38 @@ export class ScrcpyService {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to launch app ${packageName}: ${errorMessage}`);
+        }
+    }
+
+    async pasteText(text: string): Promise<void> {
+        if (!this.controller) {
+            console.error('[ScrcpyService] pasteText failed - no controller');
+            throw new Error('Controller not connected');
+        }
+
+        if (!text || text.length === 0) {
+            console.log('[ScrcpyService] pasteText aborted - empty text');
+            return;
+        }
+
+        try {
+            console.log('[ScrcpyService] Calling controller.setClipboard...', {
+                content: text.substring(0, 50),
+                sequence: '0n',
+                paste: true,
+            });
+            // Use setClipboard with paste=true to set device clipboard and auto-paste
+            // sequence=0n means don't wait for acknowledgment
+            await this.controller.setClipboard({
+                content: text,
+                sequence: 0n,
+                paste: true,
+            });
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error('[ScrcpyService] setClipboard failed:', errorMessage);
+            throw new Error(`Failed to paste text: ${errorMessage}`);
         }
     }
 }

@@ -971,7 +971,10 @@ export function SettingsPanel({
                                             justifyContent: 'center',
                                         }}
                                     >
-                                        <AlertTriangle size={20} style={{ color: 'var(--vsc-red)' }} />
+                                        <AlertTriangle
+                                            size={20}
+                                            style={{ color: 'var(--vsc-red)' }}
+                                        />
                                     </div>
                                     <div>
                                         <div

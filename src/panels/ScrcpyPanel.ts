@@ -305,10 +305,7 @@ export class ScrcpyPanel {
                 onVideoData: (data) => {
                     // Buffer video data and send in batches for better performance
                     // Check buffer size limit to prevent unbounded memory growth
-                    if (
-                        this._videoBufferSize + data.length >
-                        ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE
-                    ) {
+                    if (this._videoBufferSize + data.length > ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE) {
                         // Buffer is too large, drop old frames to make room
                         console.warn(
                             `Video buffer exceeded ${ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`

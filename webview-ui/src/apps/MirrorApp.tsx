@@ -235,6 +235,13 @@ export default function MirrorApp() {
         [postMessage]
     );
 
+    const handlePasteText = useCallback(
+        (text: string) => {
+            postMessage({ command: 'paste', text });
+        },
+        [postMessage]
+    );
+
     // Track previous device skin state to avoid restart on mount
     const prevDeviceSkinRef = useRef(showDeviceSkin);
 
@@ -308,6 +315,7 @@ export default function MirrorApp() {
                                     onTouchEvent={handleTouchEvent}
                                     onScrollEvent={handleScrollEvent}
                                     onKeyEvent={handleKeyEvent}
+                                    onPasteText={handlePasteText}
                                     onLog={addLog}
                                     invalidateCacheKey={deviceSkinKey}
                                     touchEnabled={settings.touchFeedback !== false}
@@ -324,6 +332,7 @@ export default function MirrorApp() {
                                 onTouchEvent={handleTouchEvent}
                                 onScrollEvent={handleScrollEvent}
                                 onKeyEvent={handleKeyEvent}
+                                onPasteText={handlePasteText}
                                 onLog={addLog}
                                 invalidateCacheKey={deviceSkinKey}
                                 touchEnabled={settings.touchFeedback !== false}
