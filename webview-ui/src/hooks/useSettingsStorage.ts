@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     touchFeedback: true,
     keyMapping: false,
     audioForward: true,
-    quality: '1920',
+    quality: '0',
     fps: '60',
     bitrate: '8',
     cursorStyle: 'crosshair',
@@ -49,10 +49,10 @@ export function useSettingsStorage() {
                 // Migrate/validate settings - reset to defaults if values are invalid
                 const migratedSettings = { ...DEFAULT_SETTINGS, ...loadedSettings };
 
-                // Validate quality (must be >= 720)
-                const qualityNum = parseInt(migratedSettings.quality || '1920', 10);
-                if (isNaN(qualityNum) || qualityNum < 720) {
-                    migratedSettings.quality = '1920';
+                // Validate quality (must be 0 for native resolution, or >= 720)
+                const qualityNum = parseInt(migratedSettings.quality || '0', 10);
+                if (isNaN(qualityNum) || (qualityNum !== 0 && qualityNum < 720)) {
+                    migratedSettings.quality = '0';
                 }
 
                 // Validate fps (must be 30, 60, or 90)

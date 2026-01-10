@@ -127,7 +127,7 @@ export class ScrcpyService {
         }
 
         // Use settings or defaults
-        const maxSize = this.settings.maxSize || 1920;
+        const maxSize = this.settings.maxSize || 0;
         const maxFps = this.settings.maxFps || 60;
         const videoBitRate = this.settings.videoBitRate || 8_000_000;
 

@@ -124,7 +124,7 @@ export default function MirrorApp() {
         postMessage({
             command: 'start',
             settings: {
-                maxSize: parseInt(settings.quality || '1920', 10),
+                maxSize: parseInt(settings.quality || '0', 10),
                 maxFps: parseInt(settings.fps || '60', 10),
                 videoBitRate: parseInt(settings.bitrate || '8', 10) * 1_000_000,
             },
@@ -148,7 +148,7 @@ export default function MirrorApp() {
             postMessage({
                 command: 'start',
                 settings: {
-                    maxSize: parseInt(settings.quality || '1920', 10),
+                    maxSize: parseInt(settings.quality || '0', 10),
                     maxFps: parseInt(settings.fps || '60', 10),
                     videoBitRate: parseInt(settings.bitrate || '8', 10) * 1_000_000,
                 },

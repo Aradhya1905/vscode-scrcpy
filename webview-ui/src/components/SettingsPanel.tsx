@@ -57,7 +57,7 @@ export function SettingsPanel({
     onDeviceSkinColorChange,
     touchFeedback = true,
     onTouchFeedbackChange,
-    quality = '1920',
+    quality = '0',
     onQualityChange,
     fps = '60',
     onFpsChange,
@@ -89,8 +89,8 @@ export function SettingsPanel({
 
     const handleQualitySave = () => {
         let value = parseInt(localQuality, 10);
-        if (isNaN(value) || value < 720) {
-            value = 720;
+        if (isNaN(value) || value < 0) {
+            value = 0;
         }
         const qualityStr = value.toString();
         setLocalQuality(qualityStr);
@@ -202,7 +202,7 @@ export function SettingsPanel({
                                 <span className="setting-label">Quality (Max Size)</span>
                             </div>
                             <div className="setting-value">
-                                <span>{quality}p</span>
+                                <span>{quality === '0' ? 'Default' : `${quality}p`}</span>
                             </div>
                         </button>
 
@@ -224,11 +224,11 @@ export function SettingsPanel({
                                         <input
                                             type="number"
                                             className="custom-input"
-                                            placeholder="1920"
-                                            min={720}
+                                            placeholder="0"
+                                            min={0}
                                             value={localQuality}
                                             onChange={(e) => setLocalQuality(e.target.value)}
-                                            onKeyPress={(e) =>
+                                            onKeyDown={(e) =>
                                                 e.key === 'Enter' && handleQualitySave()
                                             }
                                         />
@@ -249,7 +249,7 @@ export function SettingsPanel({
                                             marginLeft: 40,
                                         }}
                                     >
-                                        Max resolution (min: 720, default: 1920)
+                                        Max resolution (0 = native resolution)
                                     </div>
                                 </div>
                             </div>
@@ -383,7 +383,7 @@ export function SettingsPanel({
                                             placeholder="Custom"
                                             value={localBitrate}
                                             onChange={(e) => setLocalBitrate(e.target.value)}
-                                            onKeyPress={(e) =>
+                                            onKeyDown={(e) =>
                                                 e.key === 'Enter' && handleBitrateSave()
                                             }
                                         />
