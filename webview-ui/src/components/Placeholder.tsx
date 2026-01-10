@@ -1,5 +1,4 @@
 import { Monitor, Play, Info, Link } from 'lucide-react';
-import { Tooltip } from './Tooltip';
 
 interface PlaceholderProps {
     error?: string;
@@ -134,18 +133,9 @@ export function Placeholder({ error, isConnecting, onStart }: PlaceholderProps) 
                         <div className="placeholder-icon-bg">
                             <Monitor size={24} color="var(--vsc-text-muted)" />
                         </div>
-                        <Tooltip
-                            content="Start Mirroring"
-                            description="Begin screen mirroring session"
-                            icon={<Play size={10} />}
-                            iconColor="green"
-                            position="bottom"
-                            align="right"
-                        >
-                            <button className="placeholder-play-button" onClick={onStart}>
-                                <Play size={10} fill="white" color="white" />
-                            </button>
-                        </Tooltip>
+                        <button className="placeholder-play-button" onClick={onStart}>
+                            <Play size={10} fill="white" color="white" />
+                        </button>
                     </div>
                     <p className="placeholder-text">Press play to start mirroring</p>
                     <div className="placeholder-info">
