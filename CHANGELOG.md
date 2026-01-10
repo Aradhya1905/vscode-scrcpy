@@ -1,10 +1,5 @@
 # Changelog
 
-All notable changes to the "VS Code Scrcpy" extension will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [1.1.0] - 2026-01-10
 
 ### ✨ Features
@@ -25,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Immediate Stream Termination**: Added AbortController for instant stream termination when stopping mirror or switching devices
 - **Resource Leak Prevention**: Enhanced cleanup when switching between devices or stopping the mirror
 
-## [1.0.0] - 2025-12-XX
+## [1.0.0] - 2025-12-25
 
 ### Initial Release
 
