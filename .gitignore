@@ -53,4 +53,7 @@ coverage/
 # package-lock.json
 # yarn.lock
 
+# Publishing scripts with tokens
+publish/
+
 /docs_plans
