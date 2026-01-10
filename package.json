@@ -2,7 +2,7 @@
   "name": "vscode-scrcpy",
   "displayName": "VS Code Scrcpy",
   "description": "Mirror Android device screen in VS Code using scrcpy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "KarthikAradhya",
   "repository": {
     "type": "git",

@@ -529,7 +529,6 @@ export class ScrcpyService {
                 sequence: 0n,
                 paste: true,
             });
-
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             console.error('[ScrcpyService] setClipboard failed:', errorMessage);

@@ -72,19 +72,14 @@ export const VideoCanvas = memo(function VideoCanvas({
 
     // Handle paste request from keyboard (Ctrl+V)
     const handlePasteRequest = useCallback(async () => {
-        console.log('[VideoCanvas] handlePasteRequest called');
         if (!isConnected || !onPasteText) {
             console.log('[VideoCanvas] handlePasteRequest aborted - not connected or no handler');
             return;
         }
 
         try {
-            console.log('[VideoCanvas] Reading clipboard via navigator.clipboard.readText()...');
             const text = await navigator.clipboard.readText();
-            console.log('[VideoCanvas] Clipboard read result:', text ? `"${text.substring(0, 50)}..." (len=${text.length})` : 'null/empty');
-            
             if (text && text.length > 0) {
-                console.log('[VideoCanvas] Calling onPasteText with clipboard text');
                 onPasteText(text);
             } else {
                 console.log('[VideoCanvas] No text in clipboard');
@@ -455,12 +450,6 @@ export const VideoCanvas = memo(function VideoCanvas({
     // Handle paste events (Ctrl+V)
     const handlePaste = useCallback(
         (event: React.ClipboardEvent) => {
-            console.log('[VideoCanvas] handlePaste triggered', {
-                isConnected,
-                hasOnPasteText: !!onPasteText,
-                hasClipboardData: !!event.clipboardData,
-            });
-
             if (!isConnected || !onPasteText) {
                 console.log('[VideoCanvas] handlePaste aborted - not connected or no handler');
                 return;
@@ -470,10 +459,7 @@ export const VideoCanvas = memo(function VideoCanvas({
 
             // Get text from clipboard
             const text = event.clipboardData?.getData('text/plain');
-            console.log('[VideoCanvas] Clipboard text:', text ? `"${text.substring(0, 50)}..." (len=${text.length})` : 'null/empty');
-            
             if (text && text.length > 0) {
-                console.log('[VideoCanvas] Calling onPasteText with text');
                 onPasteText(text);
             } else {
                 console.log('[VideoCanvas] No text to paste');

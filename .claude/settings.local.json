@@ -25,7 +25,8 @@
       "Bash(tree:*)",
       "Bash(dir /b \"c:\\\\MyProjects\\\\VsCodeScrcpy\\\\.claude\")",
       "Bash(npm ls:*)",
-      "Bash(npm run typecheck:*)"
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run format:check:*)"
     ],
     "deny": [],
     "ask": []
