@@ -33,7 +33,7 @@ export function Placeholder({ error, isConnecting, onStart }: PlaceholderProps) 
                         </div>
                         <h3 className="error-title">Connection Lost</h3>
                         <p className="error-message">{error}</p>
-                        <button className="error-retry-btn">
+                        <button className="error-retry-btn" onClick={onStart}>
                             <svg
                                 width="8"
                                 height="8"

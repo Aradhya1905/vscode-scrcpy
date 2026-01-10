@@ -136,6 +136,26 @@ export default function MirrorApp() {
         postMessage({ command: 'stop' });
     }, [addLog, postMessage]);
 
+    const handleRetry = useCallback(() => {
+        addLog('Retrying connection...');
+        // First stop any existing connection
+        postMessage({ command: 'stop' });
+        // Clear error and reset video decoder
+        setError(undefined);
+        reset();
+        // Wait a bit before restarting to ensure clean stop
+        setTimeout(() => {
+            postMessage({
+                command: 'start',
+                settings: {
+                    maxSize: parseInt(settings.quality || '1920', 10),
+                    maxFps: parseInt(settings.fps || '60', 10),
+                    videoBitRate: parseInt(settings.bitrate || '8', 10) * 1_000_000,
+                },
+            });
+        }, 300);
+    }, [addLog, reset, postMessage, settings.quality, settings.fps, settings.bitrate]);
+
     const isConnected = status === 'connected';
 
     const handleHome = useCallback(() => {
@@ -343,7 +363,7 @@ export default function MirrorApp() {
                     <Placeholder
                         error={error}
                         isConnecting={status === 'connecting'}
-                        onStart={handleStart}
+                        onStart={error ? handleRetry : handleStart}
                     />
                 )}
             </div>
