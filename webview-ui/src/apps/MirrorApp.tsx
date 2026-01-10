@@ -340,7 +340,11 @@ export default function MirrorApp() {
                         </div>
                     )
                 ) : (
-                    <Placeholder error={error} isConnecting={status === 'connecting'} />
+                    <Placeholder
+                        error={error}
+                        isConnecting={status === 'connecting'}
+                        onStart={handleStart}
+                    />
                 )}
             </div>
             <Toolbar

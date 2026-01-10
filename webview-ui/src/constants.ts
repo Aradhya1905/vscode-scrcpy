@@ -16,7 +16,7 @@ export const TOOLBAR_ICON_SIZE = 18;
  * Recommended range: SCROLL_WHEEL_SCALE between 1-10, SCROLL_WHEEL_DIVISOR between 10-50
  * Example: 5 / 20 = 0.25x scaling (smooth and controlled)
  */
-export const SCROLL_WHEEL_SCALE = 10;
+export const SCROLL_WHEEL_SCALE = 20;
 
 /**
  * Divisor for scroll wheel scaling calculation.

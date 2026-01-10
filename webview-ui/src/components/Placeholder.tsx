@@ -1,11 +1,13 @@
 import { Monitor, Play, Info, Link } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 interface PlaceholderProps {
     error?: string;
     isConnecting?: boolean;
+    onStart?: () => void;
 }
 
-export function Placeholder({ error, isConnecting }: PlaceholderProps) {
+export function Placeholder({ error, isConnecting, onStart }: PlaceholderProps) {
     if (error) {
         return (
             <div className="phone-frame">
@@ -132,9 +134,18 @@ export function Placeholder({ error, isConnecting }: PlaceholderProps) {
                         <div className="placeholder-icon-bg">
                             <Monitor size={24} color="var(--vsc-text-muted)" />
                         </div>
-                        <div className="placeholder-play-badge">
-                            <Play size={10} fill="white" color="white" />
-                        </div>
+                        <Tooltip
+                            content="Start Mirroring"
+                            description="Begin screen mirroring session"
+                            icon={<Play size={10} />}
+                            iconColor="green"
+                            position="bottom"
+                            align="right"
+                        >
+                            <button className="placeholder-play-button" onClick={onStart}>
+                                <Play size={10} fill="white" color="white" />
+                            </button>
+                        </Tooltip>
                     </div>
                     <p className="placeholder-text">Press play to start mirroring</p>
                     <div className="placeholder-info">
