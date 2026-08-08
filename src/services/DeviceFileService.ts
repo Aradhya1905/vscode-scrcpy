@@ -1,7 +1,6 @@
-import { spawn } from 'child_process';
 import * as crypto from 'crypto';
 import * as path from 'path';
-import { AdbPathResolver } from './AdbPathResolver';
+import { AdbCommandRunner } from './AdbCommandRunner';
 
 export interface DeviceFsEntry {
     name: string;
@@ -33,7 +32,7 @@ export class DeviceFileService {
 
         // Use direct `adb shell ls ... <path>` instead of `sh -c` positional args.
         // Some Android shells/devices behave inconsistently with `sh -c ... _ "$1"` which can lead to listing `/`.
-        const output = await this.runAdb(deviceId, ['shell', 'ls', '-a', '-p', normalizedPath]);
+        const output = await AdbCommandRunner.shell(deviceId, ['ls', '-a', '-p', normalizedPath]);
 
         const names = output
             .split(/\r?\n/)
@@ -68,7 +67,12 @@ export class DeviceFileService {
         if (!rp) {
             throw new Error('Missing remote path');
         }
-        await this.runAdbVoid(deviceId, ['pull', rp, localPath]);
+        // `pull` speaks the sync protocol rather than opening a shell, so it stays
+        // on the spawn path even while a mirror socket is live.
+        const result = await AdbCommandRunner.adb(deviceId, ['pull', rp, localPath]);
+        if (result.exitCode !== 0) {
+            throw new Error((result.stderr || result.stdout || 'ADB command failed').trim());
+        }
     }
 
     /**
@@ -84,9 +88,9 @@ export class DeviceFileService {
         }
 
         if (isDir) {
-            await this.runAdbVoid(deviceId, ['shell', 'rm', '-rf', '--', rp]);
+            await AdbCommandRunner.shell(deviceId, ['rm', '-rf', '--', rp]);
         } else {
-            await this.runAdbVoid(deviceId, ['shell', 'rm', '-f', '--', rp]);
+            await AdbCommandRunner.shell(deviceId, ['rm', '-f', '--', rp]);
         }
     }
 
@@ -99,53 +103,5 @@ export class DeviceFileService {
         const ext = path.posix.extname(base);
         const stem = ext ? base.slice(0, -ext.length) : base;
         return `${stem}-${hash}${ext}`;
-    }
-
-    private runAdb(deviceId: string, args: string[]): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const adb = spawn(AdbPathResolver.getAdbCommand(), ['-s', deviceId, ...args], {
-                windowsHide: true,
-            });
-            let stdout = '';
-            let stderr = '';
-
-            adb.stdout.on('data', (d) => (stdout += d.toString()));
-            adb.stderr.on('data', (d) => (stderr += d.toString()));
-
-            adb.on('close', (code) => {
-                if (code === 0) {
-                    resolve(stdout);
-                } else {
-                    reject(new Error((stderr || stdout || 'ADB command failed').trim()));
-                }
-            });
-
-            adb.on('error', (err) => {
-                reject(err);
-            });
-        });
-    }
-
-    private runAdbVoid(deviceId: string, args: string[]): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const adb = spawn(AdbPathResolver.getAdbCommand(), ['-s', deviceId, ...args], {
-                windowsHide: true,
-            });
-            let stdout = '';
-            let stderr = '';
-
-            adb.stdout.on('data', (d) => (stdout += d.toString()));
-            adb.stderr.on('data', (d) => (stderr += d.toString()));
-
-            adb.on('close', (code) => {
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error((stderr || stdout || 'ADB command failed').trim()));
-                }
-            });
-
-            adb.on('error', (err) => reject(err));
-        });
     }
 }

@@ -1,5 +1,4 @@
-import { spawn } from 'child_process';
-import { AdbPathResolver } from './AdbPathResolver';
+import { AdbCommandRunner } from './AdbCommandRunner';
 
 export interface DeviceInfo {
     id: string;
@@ -187,66 +186,21 @@ export class DeviceInfoService {
         return { network, storage };
     }
 
-    private runAdbCommand(args: string[], timeoutMs: number): Promise<string> {
-        return new Promise((resolve, reject) => {
-            if (!this.deviceId) {
-                reject(new Error('No device selected'));
-                return;
-            }
-
-            const adb = spawn(AdbPathResolver.getAdbCommand(), ['-s', this.deviceId, ...args], {
-                windowsHide: true,
-            });
-
-            // dumpsys wifi/connectivity output is large; concatenate chunks once.
-            const stdoutChunks: Buffer[] = [];
-            const stderrChunks: Buffer[] = [];
-            let settled = false;
-
-            const timer = setTimeout(() => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                adb.kill();
-                reject(new Error(`ADB command timed out after ${timeoutMs}ms: ${args.join(' ')}`));
-            }, timeoutMs);
-
-            const finish = (fn: () => void) => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                clearTimeout(timer);
-                fn();
-            };
-
-            adb.stdout.on('data', (data: Buffer) => stdoutChunks.push(data));
-            adb.stderr.on('data', (data: Buffer) => stderrChunks.push(data));
-
-            adb.on('close', (code) => {
-                finish(() => {
-                    if (code === 0) {
-                        resolve(Buffer.concat(stdoutChunks).toString('utf8').trim());
-                    } else {
-                        const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-                        reject(new Error(stderr || `Command failed with code ${code}`));
-                    }
-                });
-            });
-
-            adb.on('error', (err) => {
-                finish(() => reject(new Error(`ADB command error: ${err.message}`)));
-            });
-        });
+    /**
+     * One device shell command. Rides the live mirror socket when there is one, so
+     * a polling tick costs no processes at all while mirroring.
+     */
+    private runShellCommand(command: string[], timeoutMs: number): Promise<string> {
+        const deviceId = this.deviceId;
+        if (!deviceId) {
+            return Promise.reject(new Error('No device selected'));
+        }
+        return AdbCommandRunner.shell(deviceId, command, timeoutMs);
     }
 
     private async getBatteryInfo(): Promise<DeviceInfo['battery']> {
         try {
-            const output = await this.runAdbCommand(
-                ['shell', 'dumpsys', 'battery'],
-                DUMPSYS_TIMEOUT_MS
-            );
+            const output = await this.runShellCommand(['dumpsys', 'battery'], DUMPSYS_TIMEOUT_MS);
 
             let level = 0;
             let isCharging = false;
@@ -311,9 +265,8 @@ export class DeviceInfoService {
     }
 
     private async readStaticInfo(): Promise<StaticDeviceInfo> {
-        const output = await this.runAdbCommand(
+        const output = await this.runShellCommand(
             [
-                'shell',
                 'getprop ro.product.model; getprop ro.build.version.release; getprop ro.build.version.sdk',
             ],
             GETPROP_TIMEOUT_MS
@@ -332,8 +285,8 @@ export class DeviceInfoService {
     private async getNetworkInfo(): Promise<DeviceInfo['network']> {
         try {
             // Check WiFi status
-            const wifiOutput = await this.runAdbCommand(
-                ['shell', 'dumpsys', 'wifi'],
+            const wifiOutput = await this.runShellCommand(
+                ['dumpsys', 'wifi'],
                 DUMPSYS_TIMEOUT_MS
             ).catch(() => '');
 
@@ -361,8 +314,8 @@ export class DeviceInfoService {
             // Fallback: check connectivity service
             if (!connected) {
                 try {
-                    const connectivityOutput = await this.runAdbCommand(
-                        ['shell', 'dumpsys', 'connectivity'],
+                    const connectivityOutput = await this.runShellCommand(
+                        ['dumpsys', 'connectivity'],
                         DUMPSYS_TIMEOUT_MS
                     );
                     if (connectivityOutput.includes('CONNECTED')) {
@@ -390,7 +343,7 @@ export class DeviceInfoService {
 
     private async getStorageInfo(): Promise<DeviceInfo['storage']> {
         try {
-            const output = await this.runAdbCommand(['shell', 'df', '/data'], DUMPSYS_TIMEOUT_MS);
+            const output = await this.runShellCommand(['df', '/data'], DUMPSYS_TIMEOUT_MS);
 
             // Parse df output: Filesystem 1K-blocks Used Available Use% Mounted on
             const lines = output.split('\n');

@@ -1,6 +1,7 @@
 import { spawn, exec } from 'child_process';
 import * as vscode from 'vscode';
 import { AdbPathResolver } from './AdbPathResolver';
+import { AdbCommandRunner } from './AdbCommandRunner';
 
 // Helper to kill a process and its children on all platforms
 function killProcessTree(pid: number): void {
@@ -137,12 +138,20 @@ export class DeviceManager {
         });
     }
 
+    /**
+     * Never rejects: every caller treats an empty string as "unknown" and falls
+     * back, and a device that cannot answer a getprop is not worth an error path.
+     */
     private async _adbShell(
         deviceId: string,
         command: string[],
         timeoutMs = 1500
     ): Promise<string> {
-        return this._runAdb(['-s', deviceId, 'shell', ...command], timeoutMs);
+        try {
+            return await AdbCommandRunner.shell(deviceId, command, timeoutMs);
+        } catch {
+            return '';
+        }
     }
 
     private _cleanValue(v: string): string {

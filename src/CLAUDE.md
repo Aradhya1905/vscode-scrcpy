@@ -48,6 +48,7 @@ src/
 │   ├── DeviceFileService.ts  # File operations (push/pull/delete)
 │   ├── ApkInstaller.ts       # APK installation
 │   ├── AdbLogcatService.ts   # Logcat streaming
+│   ├── AdbCommandRunner.ts   # One-shot ADB commands (socket or spawn)
 │   └── AdbPathResolver.ts    # Cross-platform ADB detection
 ├── panels/                   # Webview panels (floating windows)
 │   ├── ScrcpyPanel.ts        # Mirror panel (can detach from sidebar)
@@ -286,6 +287,37 @@ const connector = new AdbServerNodeTcpConnector({
 });
 ```
 ADB server must be running before the extension can discover devices.
+
+### One-Shot ADB Commands
+
+Never `spawn('adb', ...)` in a service. Go through `AdbCommandRunner`, which picks
+the transport per call:
+
+```typescript
+// Device shell. Throws on a non-zero exit; returns trimmed stdout.
+const battery = await AdbCommandRunner.shell(deviceId, ['dumpsys', 'battery'], 10_000);
+
+// Same, but a failing command comes back as exitCode rather than a throw.
+const result = await AdbCommandRunner.shellDetailed(deviceId, [userTypedCommand]);
+
+// Not a shell - pull/install/logcat -c speak their own protocols. Always spawns.
+await AdbCommandRunner.adb(deviceId, ['pull', remotePath, localPath]);
+```
+
+`command` is the shell command only: no `shell`, no `-s <device>`. Both backends
+join the elements with spaces exactly as the adb CLI does, so one element holding
+pipes or `;` works as written.
+
+While a mirror session is live, `ScrcpyService` registers its `Adb` handle and
+every command for that device rides the existing connection - no process, no
+reconnect, no handshake. With mirroring off, the same call spawns. The backend is
+chosen once per call and never retried across backends: a command that failed over
+the socket may already have run.
+
+`timeoutMs` is optional; omitting it means unbounded, which is what the user-typed
+shell console wants.
+
+See [services/AdbCommandRunner.ts](services/AdbCommandRunner.ts)
 
 ### Video Buffering
 

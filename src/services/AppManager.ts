@@ -1,5 +1,4 @@
-import { spawn } from 'child_process';
-import { AdbPathResolver } from './AdbPathResolver';
+import { AdbCommandRunner } from './AdbCommandRunner';
 
 export interface AppInfo {
     packageName: string;
@@ -71,59 +70,17 @@ export class AppManager {
         this.debugAppsCacheAt = 0;
     }
 
-    private runAdbCommand(args: string[], timeoutMs: number): Promise<string> {
-        return new Promise((resolve, reject) => {
-            if (!this.deviceId) {
-                reject(new Error('No device selected'));
-                return;
-            }
-
-            const adb = spawn(AdbPathResolver.getAdbCommand(), ['-s', this.deviceId, ...args], {
-                windowsHide: true,
-            });
-
-            // Full package dumps run to several MB; collecting chunks and
-            // concatenating once avoids the quadratic cost of string +=.
-            const stdoutChunks: Buffer[] = [];
-            const stderrChunks: Buffer[] = [];
-            let settled = false;
-
-            const timer = setTimeout(() => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                adb.kill();
-                reject(new Error(`ADB command timed out after ${timeoutMs}ms: ${args.join(' ')}`));
-            }, timeoutMs);
-
-            const finish = (fn: () => void) => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                clearTimeout(timer);
-                fn();
-            };
-
-            adb.stdout.on('data', (data: Buffer) => stdoutChunks.push(data));
-            adb.stderr.on('data', (data: Buffer) => stderrChunks.push(data));
-
-            adb.on('close', (code) => {
-                finish(() => {
-                    if (code === 0) {
-                        resolve(Buffer.concat(stdoutChunks).toString('utf8').trim());
-                    } else {
-                        const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
-                        reject(new Error(stderr || `Command failed with code ${code}`));
-                    }
-                });
-            });
-
-            adb.on('error', (err) => {
-                finish(() => reject(new Error(`ADB command error: ${err.message}`)));
-            });
-        });
+    /**
+     * One device shell command. Rides the live mirror socket when there is one -
+     * which matters most here, since the package dump is the largest payload the
+     * extension reads.
+     */
+    private runShellCommand(command: string[], timeoutMs: number): Promise<string> {
+        const deviceId = this.deviceId;
+        if (!deviceId) {
+            return Promise.reject(new Error('No device selected'));
+        }
+        return AdbCommandRunner.shell(deviceId, command, timeoutMs);
     }
 
     /**
@@ -165,13 +122,12 @@ export class AppManager {
 
     private async scanPackages(): Promise<Map<string, AppInfo>> {
         const [packagesOutput, dumpOutput] = await Promise.all([
-            this.runAdbCommand(['shell', 'pm', 'list', 'packages'], PM_LIST_TIMEOUT_MS),
+            this.runShellCommand(['pm', 'list', 'packages'], PM_LIST_TIMEOUT_MS),
             // One dump for every package. Failing here only costs labels and the
             // debuggable flag, so degrade instead of falling back to per-package dumps.
-            this.runAdbCommand(
-                ['shell', 'dumpsys', 'package', 'packages'],
-                DUMPSYS_TIMEOUT_MS
-            ).catch(() => ''),
+            this.runShellCommand(['dumpsys', 'package', 'packages'], DUMPSYS_TIMEOUT_MS).catch(
+                () => ''
+            ),
         ]);
 
         const packageNames = packagesOutput
@@ -355,20 +311,10 @@ export class AppManager {
     }
 
     private async loadRecentApps(): Promise<AppInfo[]> {
-        let recentPackages = await this.readRecentPackages([
-            'shell',
-            'dumpsys',
-            'activity',
-            'recents',
-        ]);
+        let recentPackages = await this.readRecentPackages(['dumpsys', 'activity', 'recents']);
 
         if (recentPackages.length === 0) {
-            recentPackages = await this.readRecentPackages([
-                'shell',
-                'dumpsys',
-                'activity',
-                'activities',
-            ]);
+            recentPackages = await this.readRecentPackages(['dumpsys', 'activity', 'activities']);
         }
 
         // Labels and flags come from the index only if it is already warm - a
@@ -386,10 +332,10 @@ export class AppManager {
     }
 
     /** Extracts package names in recency order from an activity dump. */
-    private async readRecentPackages(args: string[]): Promise<string[]> {
+    private async readRecentPackages(command: string[]): Promise<string[]> {
         let output: string;
         try {
-            output = await this.runAdbCommand(args, DUMPSYS_TIMEOUT_MS);
+            output = await this.runShellCommand(command, DUMPSYS_TIMEOUT_MS);
         } catch {
             return [];
         }
@@ -425,16 +371,8 @@ export class AppManager {
 
         try {
             // Use monkey to launch app
-            await this.runAdbCommand(
-                [
-                    'shell',
-                    'monkey',
-                    '-p',
-                    packageName,
-                    '-c',
-                    'android.intent.category.LAUNCHER',
-                    '1',
-                ],
+            await this.runShellCommand(
+                ['monkey', '-p', packageName, '-c', 'android.intent.category.LAUNCHER', '1'],
                 PM_LIST_TIMEOUT_MS
             );
             // The launched app is now the most recent one.

@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
-import { spawn } from 'child_process';
-import { AdbPathResolver } from './AdbPathResolver';
+import { AdbCommandRunner } from './AdbCommandRunner';
 
 export interface ShellCommandResult {
     command: string;
@@ -33,40 +32,20 @@ export class AdbShellService {
      */
     async executeCommand(deviceId: string, command: string): Promise<ShellCommandResult> {
         const startTime = Date.now();
+        const sanitizedCommand = this.sanitizeCommand(command);
 
-        return new Promise((resolve, reject) => {
-            const sanitizedCommand = this.sanitizeCommand(command);
-            const args = ['-s', deviceId, 'shell', sanitizedCommand];
-            const adb = spawn(AdbPathResolver.getAdbCommand(), args, { windowsHide: true });
+        // Deliberately unbounded, as before: these are user-typed commands, and
+        // `top`, `screenrecord` and friends are expected to take their time.
+        const result = await AdbCommandRunner.shellDetailed(deviceId, [sanitizedCommand]);
+        this.addToHistory(command);
 
-            let stdout = '';
-            let stderr = '';
-
-            adb.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            adb.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            adb.on('close', (code) => {
-                const duration = Date.now() - startTime;
-                this.addToHistory(command);
-
-                resolve({
-                    command: sanitizedCommand,
-                    stdout: stdout.trim(),
-                    stderr: stderr.trim(),
-                    exitCode: code ?? 0,
-                    duration,
-                });
-            });
-
-            adb.on('error', (err) => {
-                reject(new Error(`Failed to execute command: ${err.message}`));
-            });
-        });
+        return {
+            command: sanitizedCommand,
+            stdout: result.stdout.trim(),
+            stderr: result.stderr.trim(),
+            exitCode: result.exitCode,
+            duration: Date.now() - startTime,
+        };
     }
 
     /**
@@ -74,36 +53,15 @@ export class AdbShellService {
      */
     async executeAdbCommand(deviceId: string, args: string[]): Promise<ShellCommandResult> {
         const startTime = Date.now();
+        const result = await AdbCommandRunner.adb(deviceId, args);
 
-        return new Promise((resolve, reject) => {
-            const fullArgs = ['-s', deviceId, ...args];
-            const adb = spawn(AdbPathResolver.getAdbCommand(), fullArgs, { windowsHide: true });
-
-            let stdout = '';
-            let stderr = '';
-
-            adb.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-
-            adb.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-
-            adb.on('close', (code) => {
-                resolve({
-                    command: args.join(' '),
-                    stdout: stdout.trim(),
-                    stderr: stderr.trim(),
-                    exitCode: code ?? 0,
-                    duration: Date.now() - startTime,
-                });
-            });
-
-            adb.on('error', (err) => {
-                reject(new Error(`Failed to execute ADB command: ${err.message}`));
-            });
-        });
+        return {
+            command: args.join(' '),
+            stdout: result.stdout.trim(),
+            stderr: result.stderr.trim(),
+            exitCode: result.exitCode,
+            duration: Date.now() - startTime,
+        };
     }
 
     /**

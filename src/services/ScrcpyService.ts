@@ -15,6 +15,7 @@ import {
     ScrcpyMediaStreamPacket,
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
+import { AdbCommandRunner } from './AdbCommandRunner';
 import type { ScrcpyVideoPacket } from './VideoFrameForwarder';
 
 export interface ScrcpyServiceEvents {
@@ -48,6 +49,8 @@ export class ScrcpyService {
     private streamAbortController: AbortController | null = null;
     private ptsBase: number | null = null;
     private lastPts = 0;
+    /** Withdraws this session's device handle from AdbCommandRunner. */
+    private unregisterSocket: (() => void) | null = null;
 
     constructor(events: ScrcpyServiceEvents, extensionPath: string) {
         this.events = events;
@@ -90,6 +93,14 @@ export class ScrcpyService {
 
             // Step 3: Create ADB connection to device
             this.adb = await this.adbClient.createAdb(selectedDevice);
+
+            // This connection is authenticated, idle between video packets, and
+            // multiplexes streams - so every other service's one-shot commands can
+            // ride it instead of spawning their own adb client.
+            this.unregisterSocket = AdbCommandRunner.registerSocket(
+                selectedDevice.serial,
+                this.adb
+            );
 
             // Step 4: Push scrcpy server to device
             await this.pushServer();
@@ -384,17 +395,22 @@ export class ScrcpyService {
                     return;
             }
 
-            this.controller.injectTouch({
-                action: androidAction,
-                pointerId: BigInt(0),
-                pointerX: x,
-                pointerY: y,
-                videoWidth: videoWidth,
-                videoHeight: videoHeight,
-                pressure: pressure,
-                actionButton: buttons,
-                buttons: buttons,
-            });
+            // These writers are async, so the enclosing try/catch only ever sees a
+            // synchronous throw. A disconnect mid-gesture rejects instead, which
+            // without this handler is an unhandled rejection.
+            this.controller
+                .injectTouch({
+                    action: androidAction,
+                    pointerId: BigInt(0),
+                    pointerX: x,
+                    pointerY: y,
+                    videoWidth: videoWidth,
+                    videoHeight: videoHeight,
+                    pressure: pressure,
+                    actionButton: buttons,
+                    buttons: buttons,
+                })
+                .catch((error) => console.error('Error sending touch event:', error));
         } catch (error) {
             console.error('Error sending touch event:', error);
         }
@@ -421,12 +437,14 @@ export class ScrcpyService {
                     return;
             }
 
-            this.controller.injectKeyCode({
-                action: androidAction,
-                keyCode: keyCode as AndroidKeyCode,
-                repeat: 0,
-                metaState: metaState as AndroidKeyEventMeta,
-            });
+            this.controller
+                .injectKeyCode({
+                    action: androidAction,
+                    keyCode: keyCode as AndroidKeyCode,
+                    repeat: 0,
+                    metaState: metaState as AndroidKeyEventMeta,
+                })
+                .catch((error) => console.error('Error sending key event:', error));
         } catch (error) {
             console.error('Error sending key event:', error);
         }
@@ -441,7 +459,9 @@ export class ScrcpyService {
         try {
             const powerMode =
                 mode === 0 ? AndroidScreenPowerMode.Off : AndroidScreenPowerMode.Normal;
-            this.controller.setScreenPowerMode(powerMode);
+            this.controller
+                .setScreenPowerMode(powerMode)
+                .catch((error) => console.error('Error setting screen power mode:', error));
         } catch (error) {
             console.error('Error setting screen power mode:', error);
         }
@@ -472,15 +492,17 @@ export class ScrcpyService {
             const scrollX = Math.max(-1, Math.min(1, -deltaX / 120));
             const scrollY = Math.max(-1, Math.min(1, -deltaY / 120));
 
-            this.controller.injectScroll({
-                pointerX: Math.round(x),
-                pointerY: Math.round(y),
-                videoWidth: videoWidth,
-                videoHeight: videoHeight,
-                scrollX: scrollX,
-                scrollY: scrollY,
-                buttons: 0,
-            });
+            this.controller
+                .injectScroll({
+                    pointerX: Math.round(x),
+                    pointerY: Math.round(y),
+                    videoWidth: videoWidth,
+                    videoHeight: videoHeight,
+                    scrollX: scrollX,
+                    scrollY: scrollY,
+                    buttons: 0,
+                })
+                .catch((error) => console.error('Error sending scroll event:', error));
         } catch (error) {
             console.error('Error sending scroll event:', error);
         }
@@ -525,6 +547,11 @@ export class ScrcpyService {
             this.scrcpyClient.close().catch(console.error);
             this.scrcpyClient = null;
         }
+
+        // Before dropping the handle: a command routed to a dead socket cannot fall
+        // back, since it may already have run.
+        this.unregisterSocket?.();
+        this.unregisterSocket = null;
 
         this.adb = null;
         this.adbClient = null;
