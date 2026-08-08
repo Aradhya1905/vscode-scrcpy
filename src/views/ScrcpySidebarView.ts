@@ -216,13 +216,13 @@ export class ScrcpySidebarView {
                         await this._handleSelectDevice(message.deviceId);
                         break;
                     case 'get-app-list':
-                        await this._handleGetAppList();
+                        await this._handleGetAppList(message.refresh === true);
                         break;
                     case 'get-recent-apps':
-                        await this._handleGetRecentApps();
+                        await this._handleGetRecentApps(message.refresh === true);
                         break;
                     case 'get-debug-apps':
-                        await this._handleGetDebugApps();
+                        await this._handleGetDebugApps(message.refresh === true);
                         break;
                     case 'launch-app':
                         await this._handleLaunchApp(message.packageName);
@@ -827,9 +827,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    private async _handleGetAppList() {
+    private async _handleGetAppList(refresh = false) {
         try {
-            await this._appManager?.getInstalledApps();
+            await this._appManager?.getInstalledApps(refresh);
         } catch (error) {
             console.error('Failed to get app list:', error);
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -845,9 +845,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    private async _handleGetRecentApps() {
+    private async _handleGetRecentApps(refresh = false) {
         try {
-            await this._appManager?.getRecentApps();
+            await this._appManager?.getRecentApps(refresh);
         } catch (error) {
             console.error('Failed to get recent apps:', error);
             // Send empty list on error
@@ -858,9 +858,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    private async _handleGetDebugApps() {
+    private async _handleGetDebugApps(refresh = false) {
         try {
-            await this._appManager?.getDebugApps();
+            await this._appManager?.getDebugApps(refresh);
         } catch (error) {
             console.error('Failed to get debug apps:', error);
             // Send empty list on error

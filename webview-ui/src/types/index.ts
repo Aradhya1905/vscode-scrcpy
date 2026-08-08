@@ -168,9 +168,10 @@ export type WebviewMessage =
     | { command: 'fm-list-dir'; path: string; deviceId?: string }
     | { command: 'fm-open-file'; path: string; deviceId?: string }
     | { command: 'fm-delete'; path: string; isDir?: boolean; deviceId?: string }
-    | { command: 'get-app-list' }
-    | { command: 'get-recent-apps' }
-    | { command: 'get-debug-apps' }
+    // `refresh` bypasses the extension-side package cache (the UI refresh button)
+    | { command: 'get-app-list'; refresh?: boolean }
+    | { command: 'get-recent-apps'; refresh?: boolean }
+    | { command: 'get-debug-apps'; refresh?: boolean }
     | { command: 'launch-app'; packageName: string }
     // Shell & Logs
     | { command: 'shell-execute'; shellCommand: string }
