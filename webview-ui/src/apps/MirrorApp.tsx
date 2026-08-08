@@ -42,6 +42,14 @@ export default function MirrorApp() {
                 return; // Early return - video messages don't need state updates
             }
 
+            // Sent when the extension resumes forwarding after skipping frames. Clearing
+            // the decoder makes it ignore the rest of the interrupted GOP and pick up
+            // cleanly on the keyframe the extension just requested from the device.
+            if (message.type === 'video-reset') {
+                reset();
+                return;
+            }
+
             // Use batched updates to prevent multiple re-renders
             unstable_batchedUpdates(() => {
                 switch (message.type) {
