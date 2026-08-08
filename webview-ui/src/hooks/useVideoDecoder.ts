@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 
 interface UseVideoDecoderOptions {
     onLog: (message: string, level?: 'info' | 'warn' | 'error') => void;
@@ -88,6 +88,10 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
     const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
     const videoSizeRef = useRef({ width: 0, height: 0 });
 
+    /** The one frame waiting to be drawn, and the rAF that will draw it. */
+    const pendingFrameRef = useRef<VideoFrame | null>(null);
+    const rafRef = useRef<number | null>(null);
+
     /** Highest chunk timestamp handed to the decoder, in microseconds. */
     const lastTimestampRef = useRef(0);
 
@@ -107,17 +111,48 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
                 alpha: false,
                 desynchronized: true, // Allow asynchronous drawing for lower latency
             }) ?? null;
+
+        // A remount - the device-skin toggle does one - hands over a fresh canvas at
+        // its default 300x150. The size block in present() only fires when the frame
+        // size changes, so without this the new canvas keeps that default and
+        // drawImage crops the picture to it.
+        if (canvas && videoSizeRef.current.width > 0) {
+            canvas.width = videoSizeRef.current.width;
+            canvas.height = videoSizeRef.current.height;
+        }
     }, []);
 
-    const renderFrame = useCallback(
-        (frame: VideoFrame) => {
+    /**
+     * Draws the newest decoded frame, once per vsync.
+     *
+     * `desynchronized: true` means a 2D canvas presents at vsync regardless, so
+     * drawing earlier buys no perceived latency - it only front-loads main-thread
+     * work. Pacing here bounds compositing when maxFps exceeds the refresh rate,
+     * absorbs a burst after a stall by drawing the newest frame and closing the
+     * rest, and gives every frame exactly one close() site.
+     */
+    const present = useCallback(() => {
+        rafRef.current = null;
+
+        const frame = pendingFrameRef.current;
+        pendingFrameRef.current = null;
+        if (!frame) {
+            return;
+        }
+
+        // close() in a finally: a VideoFrame leaked because drawImage threw (the
+        // canvas can detach mid-draw when the device skin remounts it) permanently
+        // stalls the decoder after about four of them.
+        try {
             const canvas = canvasRef.current;
             const ctx = ctxRef.current;
             if (!canvas || !ctx) {
-                frame.close();
                 return;
             }
 
+            // This block has to stay with the draw. VideoCanvas.updateRenderGeometry
+            // reads videoSizeRef via getVideoSize(), and geometry that stays zero
+            // makes every touch silently miss.
             if (
                 videoSizeRef.current.width !== frame.displayWidth ||
                 videoSizeRef.current.height !== frame.displayHeight
@@ -129,15 +164,42 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
             }
 
             ctx.drawImage(frame, 0, 0);
-            frame.close();
             frameCountRef.current++;
 
             if (frameCountRef.current % 60 === 0) {
                 onLog(`Rendered ${frameCountRef.current} frames`);
             }
+        } finally {
+            frame.close();
+        }
+    }, [onLog]);
+
+    /** Keeps one frame in flight: the newest. Anything it displaces is closed now. */
+    const onDecoderOutput = useCallback(
+        (frame: VideoFrame) => {
+            const stale = pendingFrameRef.current;
+            pendingFrameRef.current = frame;
+            stale?.close();
+
+            if (rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(present);
+            }
         },
-        [onLog]
+        [present]
     );
+
+    /** Cancels the pending present and closes the frame waiting in the slot. */
+    const clearPendingFrame = useCallback(() => {
+        if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+        pendingFrameRef.current?.close();
+        pendingFrameRef.current = null;
+    }, []);
+
+    // Unmount must not leave a frame open; the decoder is closed by reset().
+    useEffect(() => clearPendingFrame, [clearPendingFrame]);
 
     const createDecoder = useCallback(() => {
         if (typeof VideoDecoder === 'undefined') {
@@ -146,12 +208,12 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         }
 
         return new VideoDecoder({
-            output: renderFrame,
+            output: onDecoderOutput,
             error: (e) => {
                 onLog(`Decoder error: ${e.message}`, 'error');
             },
         });
-    }, [onLog, renderFrame]);
+    }, [onDecoderOutput, onLog]);
 
     /**
      * Payload bytes, or null if the message carried something unusable.
@@ -324,12 +386,13 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         videoSizeRef.current = { width: 0, height: 0 };
         droppedFramesRef.current = 0;
         lastDropLogTimeRef.current = 0;
+        clearPendingFrame();
 
         if (decoderRef.current && decoderRef.current.state !== 'closed') {
             decoderRef.current.close();
         }
         decoderRef.current = null;
-    }, []);
+    }, [clearPendingFrame]);
 
     const getVideoSize = useCallback(() => videoSizeRef.current, []);
 
