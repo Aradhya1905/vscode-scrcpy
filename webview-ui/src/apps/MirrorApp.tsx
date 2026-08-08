@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { Toolbar, VideoCanvas, Placeholder, PhoneFrame, ZoomHud } from '../components';
 import {
@@ -6,9 +6,12 @@ import {
     useVideoDecoder,
     useSettingsStorage,
     useZoom,
-    useFitScale,
+    useFrameFit,
 } from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
+
+/** Physical Samsung S20 body ratio (69.1mm x 151.7mm), matching deviceFrames.css */
+const DEVICE_SKIN_ASPECT_RATIO = 69.1 / 151.7;
 
 export default function MirrorApp() {
     const [status, setStatus] = useState<ConnectionStatus>('disconnected');
@@ -33,9 +36,6 @@ export default function MirrorApp() {
         [updateSetting]
     );
 
-    // Fit-to-panel factor for the device skin, read by the zoom hook's pan clamping
-    const fitScaleRef = useRef(1);
-
     const {
         zoom,
         panX,
@@ -54,17 +54,15 @@ export default function MirrorApp() {
         initialZoom: settings.zoom,
         isSettingsLoaded: isLoaded,
         onZoomChange: handleZoomPersist,
-        baseScaleRef: fitScaleRef,
     });
 
-    // The skinned frame has a fixed pixel size, so shrink it to fit narrow panels.
-    // Skinless mirroring already stretches to the container and must stay at 1.
-    const { scale: fitScale } = useFitScale<HTMLDivElement>({
-        elementRef: contentRef,
+    // The skin is laid out from --phone-height, so size it to the panel instead of
+    // leaving it at the 630px design default. Skinless mirroring already stretches.
+    const frameHeight = useFrameFit({
         containerRef: viewportRef,
-        enabled: status === 'connected' && showDeviceSkin,
+        aspectRatio: DEVICE_SKIN_ASPECT_RATIO,
+        enabled: showDeviceSkin,
     });
-    fitScaleRef.current = fitScale;
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
@@ -365,7 +363,7 @@ export default function MirrorApp() {
     // down the canvas the decoder is drawing into.
     useEffect(() => {
         setCanvasCacheKey((prev) => prev + 1);
-    }, [showDeviceSkin, zoom, panX, panY, fitScale]);
+    }, [showDeviceSkin, zoom, panX, panY, frameHeight]);
 
     // Surface the zoom HUD briefly once the stream comes up, so it's discoverable
     useEffect(() => {
@@ -413,9 +411,13 @@ export default function MirrorApp() {
                         <div
                             ref={contentRef}
                             className="zoom-content"
-                            style={{
-                                transform: `translate(${panX}px, ${panY}px) scale(${zoom * fitScale})`,
-                            }}
+                            style={
+                                {
+                                    transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                                    // Custom properties aren't part of React's CSSProperties
+                                    '--phone-height': `${frameHeight}px`,
+                                } as CSSProperties
+                            }
                         >
                             {showDeviceSkin ? (
                                 <PhoneFrame

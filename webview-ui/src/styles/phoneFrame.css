@@ -12,9 +12,9 @@
     0 0 100px rgba(188, 140, 255, 0.05);
 }
 
-/* Scaled by useFitScale so the whole mockup shrinks instead of being clipped
-   when the sidebar is narrow. Never let flex shrink it: the natural size has
-   to stay measurable for the scale factor to be correct. */
+/* Scaled by useFitScale so the whole mockup grows or shrinks with the panel
+   instead of sitting at a fixed size. Never let flex resize it: the natural
+   size has to stay measurable for the scale factor to be correct. */
 .phone-frame-fitted {
   flex: 0 0 auto;
   transform-origin: center center;

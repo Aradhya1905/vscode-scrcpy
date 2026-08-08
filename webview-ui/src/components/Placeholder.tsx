@@ -8,9 +8,15 @@ interface PlaceholderProps {
     onStart?: () => void;
 }
 
-/** Frame + notch + side buttons, scaled to fit whatever space the panel gives us */
+/**
+ * Frame + notch + side buttons, scaled to fit whatever space the panel gives us.
+ *
+ * Unlike the live mirror this is a static mockup, so a uniform transform is the
+ * right tool: the notch, buttons and copy inside scale together. It may grow
+ * past its natural size, capped so the mockup doesn't dwarf a wide panel.
+ */
 function PlaceholderFrame({ children }: { children: ReactNode }) {
-    const { ref, scale } = useFitScale<HTMLDivElement>();
+    const { ref, scale } = useFitScale<HTMLDivElement>({ maxScale: 1.5 });
 
     return (
         <div

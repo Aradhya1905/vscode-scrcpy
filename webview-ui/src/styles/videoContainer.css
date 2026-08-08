@@ -47,8 +47,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Flex must not squash the skinned frame: useFitScale needs its natural
-     layout size to compute the fit factor baked into the transform below. */
+  /* Flex must not resize the skinned frame: useFrameFit already sized it to the
+     panel via --phone-height, and shrinking would break that aspect ratio. */
   flex: 0 0 auto;
   transform-origin: center center;
   will-change: transform;

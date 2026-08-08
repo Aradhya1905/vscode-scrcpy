@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
  * Browser-style zoom ladder. Matches the steps Chrome/Edge use so the
@@ -46,20 +46,9 @@ interface UseZoomOptions {
     isSettingsLoaded?: boolean;
     /** Called whenever the user changes the zoom level, for persistence */
     onZoomChange?: (zoom: number) => void;
-    /**
-     * Scale already baked into the content transform before the user's zoom
-     * (the fit-to-panel factor). Pan clamping needs the on-screen size, which
-     * is `layout size * baseScale * zoom`.
-     */
-    baseScaleRef?: RefObject<number>;
 }
 
-export function useZoom({
-    initialZoom,
-    isSettingsLoaded,
-    onZoomChange,
-    baseScaleRef,
-}: UseZoomOptions = {}) {
+export function useZoom({ initialZoom, isSettingsLoaded, onZoomChange }: UseZoomOptions = {}) {
     const [zoom, setZoom] = useState(DEFAULT_ZOOM);
     const [pan, setPan] = useState<PanOffset>({ x: 0, y: 0 });
     const [isHudVisible, setIsHudVisible] = useState(false);
@@ -104,30 +93,22 @@ export function useZoom({
      * Limit the pan offset so the scaled content can never be dragged fully out
      * of view. The maximum travel on each axis is half of the overflow.
      */
-    const clampPan = useCallback(
-        (offset: PanOffset, level: number): PanOffset => {
-            const viewport = viewportRef.current;
-            const content = contentRef.current;
-            if (!viewport || !content) {
-                return offset;
-            }
+    const clampPan = useCallback((offset: PanOffset, level: number): PanOffset => {
+        const viewport = viewportRef.current;
+        const content = contentRef.current;
+        if (!viewport || !content) {
+            return offset;
+        }
 
-            const effective = level * (baseScaleRef?.current ?? 1);
+        // offsetWidth/Height are layout sizes, unaffected by the CSS transform
+        const maxX = Math.max(0, (content.offsetWidth * level - viewport.clientWidth) / 2);
+        const maxY = Math.max(0, (content.offsetHeight * level - viewport.clientHeight) / 2);
 
-            // offsetWidth/Height are layout sizes, unaffected by the CSS transform
-            const maxX = Math.max(0, (content.offsetWidth * effective - viewport.clientWidth) / 2);
-            const maxY = Math.max(
-                0,
-                (content.offsetHeight * effective - viewport.clientHeight) / 2
-            );
-
-            return {
-                x: Math.min(maxX, Math.max(-maxX, offset.x)),
-                y: Math.min(maxY, Math.max(-maxY, offset.y)),
-            };
-        },
-        [baseScaleRef]
-    );
+        return {
+            x: Math.min(maxX, Math.max(-maxX, offset.x)),
+            y: Math.min(maxY, Math.max(-maxY, offset.y)),
+        };
+    }, []);
 
     // ===== Zoom actions =====
 
