@@ -146,6 +146,9 @@ export class ScrcpyPanel {
                     case 'stop':
                         this._stopStreaming();
                         break;
+                    case 'video-request-keyframe':
+                        this._scrcpyService?.requestKeyFrame();
+                        break;
                     case 'ready':
                         // Send initial device list
                         await this._deviceManager?.refreshDeviceList();

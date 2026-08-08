@@ -2,6 +2,8 @@ import { useRef, useCallback, useEffect } from 'react';
 
 interface UseVideoDecoderOptions {
     onLog: (message: string, level?: 'info' | 'warn' | 'error') => void;
+    /** Asks the device for an IDR. Must be stable. */
+    onRequestKeyFrame: () => void;
 }
 
 /** NAL unit type carrying the sequence parameter set. */
@@ -9,6 +11,24 @@ const NAL_SPS = 7;
 
 // Maximum decode queue size before we start dropping non-keyframes
 const MAX_DECODE_QUEUE_SIZE = 3;
+
+/**
+ * Acceleration hints to try, in order. `null` means configure with no hint at all,
+ * for implementations that reject the field.
+ *
+ * Annex-B throughout: switching to avcC/`description` would mean rewriting every
+ * access unit from start codes to length prefixes on every frame.
+ */
+const ACCELERATION_CANDIDATES: (HardwareAcceleration | null)[] = [
+    'prefer-hardware',
+    'no-preference',
+    null,
+];
+
+type DecoderConfigState = 'idle' | 'configuring' | 'ready' | 'failed';
+
+/** Consecutive decoder errors, with no frame drawn in between, before giving up. */
+const MAX_RECOVERY_ATTEMPTS = 3;
 
 // Parse SPS to get profile/level for codec string
 function parseSPS(sps: Uint8Array): string {
@@ -79,10 +99,17 @@ function findNal(data: Uint8Array, nalType: number): Uint8Array | null {
     return start >= 0 ? data.subarray(start) : null;
 }
 
-export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
+export function useVideoDecoder({ onLog, onRequestKeyFrame }: UseVideoDecoderOptions) {
     const decoderRef = useRef<VideoDecoder | null>(null);
     /** Last SPS+PPS blob seen, kept so the decoder can be rebuilt without one inline. */
     const configRef = useRef<Uint8Array | null>(null);
+    const configStateRef = useRef<DecoderConfigState>('idle');
+    /**
+     * Where the candidate walk starts. Sticky for the session: once hardware
+     * decoding has failed at runtime there is no point offering it again.
+     */
+    const accelIndexRef = useRef(0);
+    const recoveryAttemptsRef = useRef(0);
     const frameCountRef = useRef(0);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -165,6 +192,8 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
 
             ctx.drawImage(frame, 0, 0);
             frameCountRef.current++;
+            // A drawn frame is the only proof the current configuration works.
+            recoveryAttemptsRef.current = 0;
 
             if (frameCountRef.current % 60 === 0) {
                 onLog(`Rendered ${frameCountRef.current} frames`);
@@ -211,9 +240,36 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
             output: onDecoderOutput,
             error: (e) => {
                 onLog(`Decoder error: ${e.message}`, 'error');
+
+                // A decoder error is fatal - the decoder is now closed. If hardware
+                // decoding was in use, this is where it usually surfaces: a config
+                // can report supported and still fail at runtime. Drop the
+                // preference for the rest of the session rather than looping on it.
+                if (accelIndexRef.current === 0) {
+                    accelIndexRef.current = 1;
+                    onLog('Hardware decoding failed; falling back for this session', 'warn');
+                }
+
+                // An error that repeats through every rebuild would otherwise spin
+                // error -> reconfigure -> error at keyframe rate, each turn costing a
+                // keyframe request.
+                recoveryAttemptsRef.current++;
+                if (recoveryAttemptsRef.current > MAX_RECOVERY_ATTEMPTS) {
+                    configStateRef.current = 'failed';
+                    onLog(
+                        'Decoder failed repeatedly; giving up until the stream restarts',
+                        'error'
+                    );
+                    return;
+                }
+
+                // Rebuild on the next keyframe, which carries its own SPS+PPS - so
+                // recovery costs one round trip rather than a whole GOP.
+                configStateRef.current = 'idle';
+                onRequestKeyFrame();
             },
         });
-    }, [onDecoderOutput, onLog]);
+    }, [onDecoderOutput, onLog, onRequestKeyFrame]);
 
     /**
      * Payload bytes, or null if the message carried something unusable.
@@ -240,35 +296,89 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         [onLog]
     );
 
-    /** Configures the decoder from an Annex-B blob that contains an SPS. */
+    /**
+     * Configures the decoder from an Annex-B blob containing an SPS, walking the
+     * acceleration candidates until one reports supported and configures cleanly.
+     *
+     * Async because `isConfigSupported` is: frames arriving in the meantime are
+     * dropped, and a keyframe is requested once the decoder is ready.
+     */
     const configureDecoder = useCallback(
-        (annexB: Uint8Array): boolean => {
+        async (annexB: Uint8Array): Promise<void> => {
             const sps = findNal(annexB, NAL_SPS);
             if (!sps) {
                 onLog('No SPS in video configuration; cannot configure decoder', 'error');
-                return false;
+                configStateRef.current = 'failed';
+                return;
             }
 
-            if (!decoderRef.current || decoderRef.current.state === 'closed') {
-                decoderRef.current = createDecoder();
-                if (!decoderRef.current) return false;
+            if (typeof VideoDecoder === 'undefined') {
+                onLog('WebCodecs VideoDecoder not supported', 'error');
+                configStateRef.current = 'failed';
+                return;
             }
 
+            configStateRef.current = 'configuring';
+
+            // Every exit from here must leave a state other than 'configuring':
+            // getting stuck there means a black screen that nothing recovers from.
             try {
                 const codec = parseSPS(sps);
-                decoderRef.current.configure({
-                    codec,
-                    optimizeForLatency: true,
-                });
-                lastTimestampRef.current = 0;
-                onLog(`Decoder configured with codec: ${codec}`);
-                return true;
+
+                for (let i = accelIndexRef.current; i < ACCELERATION_CANDIDATES.length; i++) {
+                    const acceleration = ACCELERATION_CANDIDATES[i];
+                    const config: VideoDecoderConfig = { codec, optimizeForLatency: true };
+                    if (acceleration) {
+                        config.hardwareAcceleration = acceleration;
+                    }
+
+                    try {
+                        const support = await VideoDecoder.isConfigSupported(config);
+                        if (!support.supported) {
+                            continue;
+                        }
+                    } catch {
+                        // Some implementations reject rather than reporting unsupported.
+                        continue;
+                    }
+
+                    if (!decoderRef.current || decoderRef.current.state === 'closed') {
+                        decoderRef.current = createDecoder();
+                        if (!decoderRef.current) {
+                            configStateRef.current = 'failed';
+                            return;
+                        }
+                    }
+
+                    try {
+                        decoderRef.current.configure(config);
+                    } catch (e) {
+                        onLog(`Failed to configure decoder: ${(e as Error).message}`, 'warn');
+                        continue;
+                    }
+
+                    // Remember the winner, so a later reconfigure skips the candidates
+                    // already known to fail.
+                    accelIndexRef.current = i;
+                    configStateRef.current = 'ready';
+                    lastTimestampRef.current = 0;
+                    onLog(
+                        `Decoder configured: ${codec}, acceleration: ${acceleration ?? 'default'}`
+                    );
+
+                    // Nothing decoded during the walk, so ask for an IDR to start from.
+                    onRequestKeyFrame();
+                    return;
+                }
+
+                configStateRef.current = 'failed';
+                onLog(`No supported decoder configuration for codec ${codec}`, 'error');
             } catch (e) {
-                onLog(`Failed to configure decoder: ${(e as Error).message}`, 'error');
-                return false;
+                configStateRef.current = 'failed';
+                onLog(`Decoder configuration failed: ${(e as Error).message}`, 'error');
             }
         },
-        [createDecoder, onLog]
+        [createDecoder, onLog, onRequestKeyFrame]
     );
 
     const processVideoConfig = useCallback(
@@ -279,27 +389,39 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
             }
 
             configRef.current = config;
-            configureDecoder(config);
+            if (configStateRef.current === 'idle') {
+                void configureDecoder(config);
+            }
         },
         [configureDecoder, toBytes]
     );
 
     /**
-     * A decoder in the 'configured' state, rebuilding it if necessary.
+     * A decoder ready to accept this packet, or null if it must be dropped.
      *
      * Only a keyframe can start or restart decoding, and since the extension
      * prepends SPS+PPS to every keyframe, any keyframe suffices. That single path
      * covers first configuration, recovery after a decoder error, and resuming
      * after a `video-reset` - no separate recovery branch needed.
+     *
+     * Configuration is async, so this never returns a decoder on the packet that
+     * starts it; the requested keyframe is the one that gets decoded.
      */
-    const ensureDecoder = useCallback(
+    const readyDecoder = useCallback(
         (data: Uint8Array, keyframe: boolean): VideoDecoder | null => {
             const decoder = decoderRef.current;
-            if (decoder && decoder.state === 'configured') {
-                return decoder;
+            if (configStateRef.current === 'ready') {
+                if (decoder && decoder.state === 'configured') {
+                    return decoder;
+                }
+                // 'ready' over a decoder that is gone would strand every frame here,
+                // since only 'idle' reconfigures.
+                configStateRef.current = 'idle';
             }
 
-            if (!keyframe) {
+            // 'configuring' has a walk in flight; 'failed' found no usable config for
+            // this codec and only a reset (a new stream) is worth retrying for.
+            if (!keyframe || configStateRef.current !== 'idle') {
                 return null;
             }
 
@@ -315,14 +437,12 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
             // Prefer the configuration carried by this keyframe; fall back to the
             // last one seen if the extension had none to prepend.
             const inlineConfig = findNal(data, NAL_SPS) ? data : configRef.current;
-            if (!inlineConfig || !configureDecoder(inlineConfig)) {
-                return null;
+            if (inlineConfig) {
+                void configureDecoder(inlineConfig);
             }
-
-            onLog('Decoder configured from keyframe', 'info');
-            return decoderRef.current;
+            return null;
         },
-        [configureDecoder, onLog]
+        [configureDecoder]
     );
 
     const processVideoPacket = useCallback(
@@ -352,7 +472,7 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
                 return;
             }
 
-            const decoder = ensureDecoder(data, keyframe);
+            const decoder = readyDecoder(data, keyframe);
             if (!decoder) {
                 return;
             }
@@ -376,11 +496,15 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
                 onLog(`Decode error: ${(e as Error).message}`, 'error');
             }
         },
-        [ensureDecoder, onLog, toBytes]
+        [onLog, readyDecoder, toBytes]
     );
 
     const reset = useCallback(() => {
         configRef.current = null;
+        // Back to 'idle', but accelIndexRef stays: the fallback is per session, not
+        // per stream.
+        configStateRef.current = 'idle';
+        recoveryAttemptsRef.current = 0;
         frameCountRef.current = 0;
         lastTimestampRef.current = 0;
         videoSizeRef.current = { width: 0, height: 0 };

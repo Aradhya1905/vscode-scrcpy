@@ -162,6 +162,10 @@ export type WebviewMessage =
     | { command: 'set-persistent-mirroring'; enabled: boolean }
     | { command: 'pick-apk-files' }
     | { command: 'install-apk'; files?: string[] }
+    // The decoder needs an IDR: it just (re)configured, and every keyframe carries
+    // the SPS+PPS it needs. Without this it would wait for the encoder's next
+    // scheduled keyframe, which is seconds away.
+    | { command: 'video-request-keyframe' }
     | { command: 'get-device-info' }
     | { command: 'get-device-list' }
     | { command: 'select-device'; deviceId: string }

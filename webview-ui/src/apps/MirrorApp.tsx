@@ -51,13 +51,19 @@ export default function MirrorApp() {
         // Logging disabled for performance
     }, []);
 
+    // Use a ref to store postMessage to avoid circular dependency
+    const postMessageRef = useRef<((msg: any) => void) | null>(null);
+
+    // Stable, so it cannot invalidate the decoder's configuration callbacks.
+    const requestKeyFrame = useCallback(() => {
+        postMessageRef.current?.({ command: 'video-request-keyframe' });
+    }, []);
+
     const { setCanvas, processVideoConfig, processVideoPacket, reset, getVideoSize } =
         useVideoDecoder({
             onLog: addLog,
+            onRequestKeyFrame: requestKeyFrame,
         });
-
-    // Use a ref to store postMessage to avoid circular dependency
-    const postMessageRef = useRef<((msg: any) => void) | null>(null);
 
     const handleMessage = useCallback(
         (message: ExtensionMessage) => {
