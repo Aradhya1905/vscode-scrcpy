@@ -1,5 +1,6 @@
 export { Toolbar } from './Toolbar';
 export { VideoCanvas } from './VideoCanvas';
+export type { VideoCanvasHandle } from './VideoCanvas';
 export { Placeholder } from './Placeholder';
 export { PhoneFrame } from './DeviceFrames';
 export { SettingsPanel } from './SettingsPanel';

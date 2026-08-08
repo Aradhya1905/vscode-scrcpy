@@ -101,17 +101,14 @@ export const Toolbar = memo(function Toolbar({
     const [stayAwake, setStayAwake] = useState(false);
     const [darkMode, setDarkMode] = useState(false);
 
-    // Reset screen off state when streaming stops
+    // Reset screen off state when streaming stops. Derived from the status prop
+    // rather than a second `message` listener - that listener ran for every video
+    // packet just to check for one message type.
     useEffect(() => {
-        const handler = (event: MessageEvent<any>) => {
-            const msg = event.data;
-            if (msg?.type === 'disconnected') {
-                setScreenOff(false);
-            }
-        };
-        window.addEventListener('message', handler);
-        return () => window.removeEventListener('message', handler);
-    }, []);
+        if (status === 'disconnected') {
+            setScreenOff(false);
+        }
+    }, [status]);
 
     const selectedDevice = devices.find((d) => d.id === selectedDeviceId);
     const statusDotClass =

@@ -133,6 +133,16 @@ export default function FileManagerApp() {
 
     const { postMessage } = useVSCodeMessages(handleMessage);
 
+    const handleSelectDeviceFromPicker = useCallback(
+        (id: string) => postMessage({ command: 'select-device', deviceId: id }),
+        [postMessage]
+    );
+
+    const handleRefreshDeviceList = useCallback(
+        () => postMessage({ command: 'get-device-list' }),
+        [postMessage]
+    );
+
     const requestList = useCallback(
         (pathToList: string) => {
             const p = normalizePath(pathToList);
@@ -330,10 +340,8 @@ export default function FileManagerApp() {
                         devices={devices}
                         selectedDeviceId={selectedDeviceId}
                         dropdownPlacement="down"
-                        onSelectDevice={(id) =>
-                            postMessage({ command: 'select-device', deviceId: id })
-                        }
-                        onRefresh={() => postMessage({ command: 'get-device-list' })}
+                        onSelectDevice={handleSelectDeviceFromPicker}
+                        onRefresh={handleRefreshDeviceList}
                     />
                     <button
                         className="fm-icon-btn focus-ring"

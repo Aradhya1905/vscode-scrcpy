@@ -254,6 +254,41 @@ decoder.decode(new EncodedVideoChunk({ type: keyframe ? 'key' : 'delta', timesta
 
 Example: [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
 
+```typescript
+// ✅ DO: drive a per-pointermove transform imperatively, not through state
+// A pan that goes through setState costs a React render *and* a forced layout
+// per move, interleaved with drawImage on the same main thread. `panRef` is the
+// live value; React state only catches up on pointer-up, for the HUD.
+const panBy = useCallback(
+    (deltaX: number, deltaY: number) => {
+        panRef.current = clampPan(
+            { x: panRef.current.x + deltaX, y: panRef.current.y + deltaY },
+            zoomRef.current
+        );
+        writeTransform(); // content.style.transform = ...
+    },
+    [clampPan, writeTransform]
+);
+```
+
+Clamp bounds come from cached `offsetWidth`/`clientWidth` measured once at pan
+start - never read layout inside a state updater. The transform lives *only* in
+the imperative write, so React must not also set it via `style`.
+
+Example: [src/hooks/useZoom.ts](src/hooks/useZoom.ts)
+
+```typescript
+// ✅ DO: invalidate a child's cached geometry through an imperative handle
+// A changing `invalidateCacheKey` prop defeats memo() on VideoCanvas and
+// re-renders the canvas the decoder is drawing into.
+const canvasHandleRef = useRef<VideoCanvasHandle | null>(null);
+const handleTransformChange = useCallback(() => {
+    canvasHandleRef.current?.invalidateGeometry();
+}, []);
+```
+
+Example: [src/apps/MirrorApp.tsx](src/apps/MirrorApp.tsx)
+
 ---
 
 ## Key Files (Understand These First)
@@ -444,6 +479,22 @@ consecutive locally dropped deltas - the case where the queue pins just under th
 drop threshold and no depth test would ever fire). While saturated the extension
 forwards keyframes only, so recovery is detected by polling `decodeQueueSize`
 rather than by arriving frames. See [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
+
+### Memo and Prop Identity
+
+`Toolbar`, `VideoCanvas`, `DeviceSelector` and `ZoomHud` are all `memo()`'d, which
+means every handler they receive has to be wrapped in `useCallback` - one inline
+arrow is enough to make the memo a no-op. Two non-obvious cases:
+
+- `DeviceSelector` refreshes the device list in an effect keyed on `isOpen`. An
+  unstable `onRefresh` in the dep array re-fires it and re-posts `get-device-list`,
+  so the callback is held in a ref.
+- `useVSCodeMessages` registers its `message` listener once and routes through a
+  ref. The effect also posts `ready`, which kicks off extension-side init - a dep
+  change must never be able to retrigger that.
+
+`unstable_batchedUpdates` is a React-17 shim and a no-op under `createRoot`;
+event handlers batch automatically.
 
 ### Cleanup on Unmount
 

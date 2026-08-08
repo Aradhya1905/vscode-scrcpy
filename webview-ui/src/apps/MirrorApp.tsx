@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { unstable_batchedUpdates } from 'react-dom';
 import { Toolbar, VideoCanvas, Placeholder, PhoneFrame, ZoomHud } from '../components';
+import type { VideoCanvasHandle } from '../components';
 import { useVSCodeMessages, useVideoDecoder, useSettingsStorage, useZoom } from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
 
@@ -11,9 +11,15 @@ export default function MirrorApp() {
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
     // Remount key for the canvas - only the device skin toggle should remount it
     const [deviceSkinKey, setDeviceSkinKey] = useState(0);
-    // Rect-cache invalidation counter - bumped by anything that moves the canvas
-    const [canvasCacheKey, setCanvasCacheKey] = useState(0);
     const [isPanning, setIsPanning] = useState(false);
+
+    // Imperative handle on the canvas. Zoom/pan invalidate its rect cache through
+    // this instead of through a changing prop, so the transform never re-renders
+    // the canvas - the decoder is drawing into it.
+    const canvasHandleRef = useRef<VideoCanvasHandle | null>(null);
+    const handleTransformChange = useCallback(() => {
+        canvasHandleRef.current?.invalidateGeometry();
+    }, []);
 
     // Load settings from storage
     const { settings, isLoaded, updateSetting, resetSettings } = useSettingsStorage();
@@ -39,13 +45,23 @@ export default function MirrorApp() {
         resetZoom,
         zoomAtPoint,
         panBy,
+        setPanActive,
         showHud,
         holdHud,
     } = useZoom({
         initialZoom: settings.zoom,
         isSettingsLoaded: isLoaded,
         onZoomChange: handleZoomPersist,
+        onTransformChange: handleTransformChange,
     });
+
+    const handlePanStateChange = useCallback(
+        (panning: boolean) => {
+            setIsPanning(panning);
+            setPanActive(panning);
+        },
+        [setPanActive]
+    );
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
@@ -96,52 +112,51 @@ export default function MirrorApp() {
                 return;
             }
 
-            // Use batched updates to prevent multiple re-renders
-            unstable_batchedUpdates(() => {
-                switch (message.type) {
-                    case 'connecting':
-                        setStatus('connecting');
-                        break;
+            // React 18's createRoot batches every update in an event handler
+            // automatically - no unstable_batchedUpdates wrapper needed.
+            switch (message.type) {
+                case 'connecting':
+                    setStatus('connecting');
+                    break;
 
-                    case 'connected':
-                        setStatus('connected');
-                        setError(undefined);
-                        // Request device info after state update
-                        setTimeout(() => {
-                            postMessageRef.current?.({ command: 'get-device-info' });
-                        }, 0);
-                        break;
+                case 'connected':
+                    setStatus('connected');
+                    setError(undefined);
+                    // Request device info after state update
+                    setTimeout(() => {
+                        postMessageRef.current?.({ command: 'get-device-info' });
+                    }, 0);
+                    break;
 
-                    case 'disconnected':
-                        setStatus('disconnected');
-                        reset();
-                        break;
+                case 'disconnected':
+                    setStatus('disconnected');
+                    reset();
+                    break;
 
-                    case 'error':
-                        setError(message.message);
-                        break;
+                case 'error':
+                    setError(message.message);
+                    break;
 
-                    case 'device-info':
-                        // Device info received but not used in new UI
-                        break;
+                case 'device-info':
+                    // Device info received but not used in new UI
+                    break;
 
-                    case 'device-list':
-                        setDeviceList(message.devices);
-                        break;
+                case 'device-list':
+                    setDeviceList(message.devices);
+                    break;
 
-                    case 'device-selected':
-                        setSelectedDeviceId(message.deviceId);
-                        break;
+                case 'device-selected':
+                    setSelectedDeviceId(message.deviceId);
+                    break;
 
-                    case 'app-list':
-                    case 'recent-apps':
-                    case 'debug-apps':
-                    case 'app-launched':
-                    case 'fm-dir':
-                        // Not used in mirror UI
-                        break;
-                }
-            });
+                case 'app-list':
+                case 'recent-apps':
+                case 'debug-apps':
+                case 'app-launched':
+                case 'fm-dir':
+                    // Not used in mirror UI
+                    break;
+            }
         },
         [processVideoConfig, processVideoPacket, reset]
     );
@@ -329,6 +344,64 @@ export default function MirrorApp() {
         [postMessage]
     );
 
+    // Toolbar is memo'd and takes ~15 handlers. Every one has to be referentially
+    // stable or the memo never hits and the whole settings/more panel tree
+    // re-renders on any MirrorApp render.
+    const handleShowDeviceSkinChange = useCallback(
+        (value: boolean) => updateSetting('showDeviceSkin', value),
+        [updateSetting]
+    );
+
+    const handleGradientColor1Change = useCallback(
+        (color1: string) => updateSetting('gradientColor1', color1),
+        [updateSetting]
+    );
+
+    const handleGradientColor2Change = useCallback(
+        (color2: string) => updateSetting('gradientColor2', color2),
+        [updateSetting]
+    );
+
+    const handleDeviceSkinColorChange = useCallback(
+        (color: string) => updateSetting('deviceSkinColor', color),
+        [updateSetting]
+    );
+
+    const handleTouchFeedbackChange = useCallback(
+        (enabled: boolean) => updateSetting('touchFeedback', enabled),
+        [updateSetting]
+    );
+
+    const handleQualityChange = useCallback(
+        (value: string) => updateSetting('quality', value),
+        [updateSetting]
+    );
+
+    const handleFpsChange = useCallback(
+        (value: string) => updateSetting('fps', value),
+        [updateSetting]
+    );
+
+    const handleBitrateChange = useCallback(
+        (value: string) => updateSetting('bitrate', value),
+        [updateSetting]
+    );
+
+    const handleCursorStyleChange = useCallback(
+        (value: 'crosshair' | 'default') => updateSetting('cursorStyle', value),
+        [updateSetting]
+    );
+
+    const handlePersistentMirroringChange = useCallback(
+        (enabled: boolean) => updateSetting('persistentMirroring', enabled),
+        [updateSetting]
+    );
+
+    const handleResetSettings = useCallback(() => {
+        resetSettings();
+        resetZoom();
+    }, [resetSettings, resetZoom]);
+
     // Track previous device skin state to avoid restart on mount
     const prevDeviceSkinRef = useRef(showDeviceSkin);
 
@@ -353,15 +426,6 @@ export default function MirrorApp() {
     useEffect(() => {
         setDeviceSkinKey((prev) => prev + 1);
     }, [showDeviceSkin]);
-
-    // Invalidate the canvas rect cache when the rendered geometry changes.
-    // A CSS transform doesn't trigger the canvas ResizeObserver, so zoom/pan must
-    // invalidate explicitly or touch coordinates would use a stale rect.
-    // NOTE: this must NOT be the remount `key` - remounting mid-pan would tear
-    // down the canvas the decoder is drawing into.
-    useEffect(() => {
-        setCanvasCacheKey((prev) => prev + 1);
-    }, [showDeviceSkin, zoom, panX, panY]);
 
     // Surface the zoom HUD briefly once the stream comes up, so it's discoverable
     useEffect(() => {
@@ -406,13 +470,9 @@ export default function MirrorApp() {
             >
                 {isConnected ? (
                     <>
-                        <div
-                            ref={contentRef}
-                            className="zoom-content"
-                            style={{
-                                transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-                            }}
-                        >
+                        {/* useZoom writes `transform` here imperatively - a pan must
+                            not go through React state, and React must not fight it. */}
+                        <div ref={contentRef} className="zoom-content">
                             {showDeviceSkin ? (
                                 <PhoneFrame
                                     key={`phone-frame-${settings.deviceSkinColor || 'default'}`}
@@ -421,6 +481,7 @@ export default function MirrorApp() {
                                     <div className="mirror-stage">
                                         <VideoCanvas
                                             key={deviceSkinKey}
+                                            ref={canvasHandleRef}
                                             isConnected={isConnected}
                                             canvasRef={setCanvas}
                                             getVideoSize={getVideoSize}
@@ -429,11 +490,10 @@ export default function MirrorApp() {
                                             onKeyEvent={handleKeyEvent}
                                             onPasteText={handlePasteText}
                                             onLog={addLog}
-                                            invalidateCacheKey={canvasCacheKey}
                                             touchEnabled={settings.touchFeedback !== false}
                                             onZoomWheel={zoomAtPoint}
                                             onPan={panBy}
-                                            onPanStateChange={setIsPanning}
+                                            onPanStateChange={handlePanStateChange}
                                         />
                                     </div>
                                 </PhoneFrame>
@@ -441,6 +501,7 @@ export default function MirrorApp() {
                                 <div className="mirror-stage">
                                     <VideoCanvas
                                         key={deviceSkinKey}
+                                        ref={canvasHandleRef}
                                         isConnected={isConnected}
                                         canvasRef={setCanvas}
                                         getVideoSize={getVideoSize}
@@ -449,11 +510,10 @@ export default function MirrorApp() {
                                         onKeyEvent={handleKeyEvent}
                                         onPasteText={handlePasteText}
                                         onLog={addLog}
-                                        invalidateCacheKey={canvasCacheKey}
                                         touchEnabled={settings.touchFeedback !== false}
                                         onZoomWheel={zoomAtPoint}
                                         onPan={panBy}
-                                        onPanStateChange={setIsPanning}
+                                        onPanStateChange={handlePanStateChange}
                                     />
                                 </div>
                             )}
@@ -491,37 +551,26 @@ export default function MirrorApp() {
                 onRefreshDevices={handleRefreshDevices}
                 toolbarPosition="bottom"
                 showDeviceSkin={showDeviceSkin}
-                onShowDeviceSkinChange={(value) => updateSetting('showDeviceSkin', value)}
+                onShowDeviceSkinChange={handleShowDeviceSkinChange}
                 gradientColor1={settings.gradientColor1}
                 gradientColor2={settings.gradientColor2}
-                onGradientColor1Change={(color1) => {
-                    updateSetting('gradientColor1', color1);
-                }}
-                onGradientColor2Change={(color2) => {
-                    updateSetting('gradientColor2', color2);
-                }}
+                onGradientColor1Change={handleGradientColor1Change}
+                onGradientColor2Change={handleGradientColor2Change}
                 deviceSkinColor={settings.deviceSkinColor}
-                onDeviceSkinColorChange={(color) => {
-                    updateSetting('deviceSkinColor', color);
-                }}
+                onDeviceSkinColorChange={handleDeviceSkinColorChange}
                 touchFeedback={settings.touchFeedback !== false}
-                onTouchFeedbackChange={(enabled) => updateSetting('touchFeedback', enabled)}
+                onTouchFeedbackChange={handleTouchFeedbackChange}
                 quality={settings.quality}
-                onQualityChange={(value) => updateSetting('quality', value)}
+                onQualityChange={handleQualityChange}
                 fps={settings.fps}
-                onFpsChange={(value) => updateSetting('fps', value)}
+                onFpsChange={handleFpsChange}
                 bitrate={settings.bitrate}
-                onBitrateChange={(value) => updateSetting('bitrate', value)}
+                onBitrateChange={handleBitrateChange}
                 cursorStyle={settings.cursorStyle}
-                onCursorStyleChange={(value) => updateSetting('cursorStyle', value)}
-                onResetSettings={() => {
-                    resetSettings();
-                    resetZoom();
-                }}
+                onCursorStyleChange={handleCursorStyleChange}
+                onResetSettings={handleResetSettings}
                 persistentMirroring={persistentMirroring}
-                onPersistentMirroringChange={(enabled) =>
-                    updateSetting('persistentMirroring', enabled)
-                }
+                onPersistentMirroringChange={handlePersistentMirroringChange}
             />
         </>
     );

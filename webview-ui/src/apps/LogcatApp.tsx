@@ -66,6 +66,16 @@ export default function LogcatApp() {
 
     const { postMessage } = useVSCodeMessages(handleMessage);
 
+    const handleSelectDeviceFromPicker = useCallback(
+        (id: string) => postMessage({ command: 'select-device', deviceId: id }),
+        [postMessage]
+    );
+
+    const handleRefreshDeviceList = useCallback(
+        () => postMessage({ command: 'get-device-list' }),
+        [postMessage]
+    );
+
     const handleStartStreaming = useCallback(
         (packageName?: string) => {
             setLogcatError(undefined);
@@ -157,10 +167,8 @@ export default function LogcatApp() {
                         devices={devices}
                         selectedDeviceId={selectedDeviceId}
                         dropdownPlacement="down"
-                        onSelectDevice={(id) =>
-                            postMessage({ command: 'select-device', deviceId: id })
-                        }
-                        onRefresh={() => postMessage({ command: 'get-device-list' })}
+                        onSelectDevice={handleSelectDeviceFromPicker}
+                        onRefresh={handleRefreshDeviceList}
                     />
                 </div>
             </div>

@@ -109,6 +109,16 @@ export default function ShellLogsApp() {
 
     const { postMessage } = useVSCodeMessages(handleMessage);
 
+    const handleSelectDeviceFromPicker = useCallback(
+        (id: string) => postMessage({ command: 'select-device', deviceId: id }),
+        [postMessage]
+    );
+
+    const handleRefreshDeviceList = useCallback(
+        () => postMessage({ command: 'get-device-list' }),
+        [postMessage]
+    );
+
     // Initial fetches
     useEffect(() => {
         postMessage({ command: 'get-device-list' });
@@ -201,10 +211,8 @@ export default function ShellLogsApp() {
                         devices={devices}
                         selectedDeviceId={selectedDeviceId}
                         dropdownPlacement="down"
-                        onSelectDevice={(id) =>
-                            postMessage({ command: 'select-device', deviceId: id })
-                        }
-                        onRefresh={() => postMessage({ command: 'get-device-list' })}
+                        onSelectDevice={handleSelectDeviceFromPicker}
+                        onRefresh={handleRefreshDeviceList}
                     />
                 </div>
             </div>

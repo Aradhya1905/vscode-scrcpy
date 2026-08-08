@@ -54,10 +54,15 @@ export const DeviceSelector = memo(function DeviceSelector({
         [devices, selectedDeviceId]
     );
 
+    // Refresh once per open. Held in a ref so an unstable `onRefresh` from the
+    // parent cannot re-fire the effect and re-post `get-device-list`.
+    const onRefreshRef = useRef(onRefresh);
+    onRefreshRef.current = onRefresh;
+
     useEffect(() => {
         if (!isOpen) return;
-        onRefresh();
-    }, [isOpen, onRefresh]);
+        onRefreshRef.current();
+    }, [isOpen]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
