@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { ScrcpyService } from '../services/ScrcpyService';
+import { VideoFrameForwarder } from '../services/VideoFrameForwarder';
 import { DeviceInfoService } from '../services/DeviceInfoService';
 import { DeviceManager } from '../services/DeviceManager';
 import { AdbShellService } from '../services/AdbShellService';
@@ -18,16 +19,11 @@ export class ScrcpyPanel {
     private readonly _context: vscode.ExtensionContext;
     private _disposables: vscode.Disposable[] = [];
     private _scrcpyService: ScrcpyService | null = null;
-    private _videoBuffer: Buffer[] = [];
-    private _videoBufferSize: number = 0; // Track total buffer size in bytes
-    private _sendVideoTimeout: NodeJS.Timeout | null = null;
+    private readonly _videoForwarder: VideoFrameForwarder;
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _adbShellService: AdbShellService;
     private _isPanelVisible: boolean = true;
-
-    // Maximum buffer size before dropping frames (2MB)
-    private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
 
     public static createOrShow(context: vscode.ExtensionContext) {
         const column = vscode.window.activeTextEditor
@@ -66,6 +62,15 @@ export class ScrcpyPanel {
         this._context = context;
 
         this._adbShellService = new AdbShellService(context);
+
+        this._videoForwarder = new VideoFrameForwarder({
+            postMessage: (message) => this._panel.webview.postMessage(message),
+            // Nothing can be rendered while the tab is in the background, so the packet
+            // is dropped before the copy, the concat and the base64.
+            isDeliverable: () => this._isPanelVisible,
+            requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
+            onWarn: (message) => console.warn(message),
+        });
 
         // Initialize DeviceManager
         this._deviceManager = new DeviceManager(context, {
@@ -126,7 +131,7 @@ export class ScrcpyPanel {
                     }
                 } else {
                     this._deviceInfoService?.pausePolling();
-                    this._dropBufferedVideo();
+                    this._videoForwarder.reset();
                 }
             },
             null,
@@ -335,44 +340,7 @@ export class ScrcpyPanel {
 
         this._scrcpyService = new ScrcpyService(
             {
-                onVideoData: (data) => {
-                    // Nothing can be rendered while the tab is in the background, so drop
-                    // the packet before paying for the copy, the concat and the base64.
-                    if (!this._isPanelVisible) {
-                        return;
-                    }
-
-                    // Buffer video data and send in batches for better performance
-                    // Check buffer size limit to prevent unbounded memory growth
-                    if (this._videoBufferSize + data.length > ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE) {
-                        // Buffer is too large, drop old frames to make room
-                        console.warn(
-                            `Video buffer exceeded ${ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`
-                        );
-                        this._videoBuffer = [];
-                        this._videoBufferSize = 0;
-                    }
-
-                    this._videoBuffer.push(data);
-                    this._videoBufferSize += data.length;
-
-                    if (!this._sendVideoTimeout) {
-                        this._sendVideoTimeout = setTimeout(() => {
-                            if (this._videoBuffer.length > 0) {
-                                const combined = Buffer.concat(this._videoBuffer);
-                                this._videoBuffer = [];
-                                this._videoBufferSize = 0;
-                                // Use base64 encoding instead of Array.from() for much better performance
-                                // base64 is ~33% larger but avoids the massive overhead of JSON serializing arrays
-                                this._panel.webview.postMessage({
-                                    type: 'video',
-                                    data: combined.toString('base64'),
-                                });
-                            }
-                            this._sendVideoTimeout = null;
-                        }, 8); // ~120fps batching for lower latency
-                    }
-                },
+                onVideoData: this._videoForwarder.handlePacket,
                 onError: (error) => {
                     vscode.window.showErrorMessage(`Scrcpy Error: ${error}`);
                     this._panel.webview.postMessage({
@@ -409,18 +377,9 @@ export class ScrcpyPanel {
     }
 
     private _stopStreaming() {
-        this._dropBufferedVideo();
+        this._videoForwarder.reset();
         this._scrcpyService?.stop();
         this._scrcpyService = null;
-    }
-
-    private _dropBufferedVideo(): void {
-        if (this._sendVideoTimeout) {
-            clearTimeout(this._sendVideoTimeout);
-            this._sendVideoTimeout = null;
-        }
-        this._videoBuffer = [];
-        this._videoBufferSize = 0;
     }
 
     /**
@@ -428,11 +387,7 @@ export class ScrcpyPanel {
      * panel was hidden). Anything still buffered belongs to the old GOP.
      */
     private _resyncVideoStream(): void {
-        this._dropBufferedVideo();
-
-        // Ordering matters: the reset must reach the webview before the new frames do
-        this._panel.webview.postMessage({ type: 'video-reset' });
-        this._scrcpyService?.requestKeyFrame();
+        this._videoForwarder.resync();
     }
 
     private _handleTouchEvent(message: any) {

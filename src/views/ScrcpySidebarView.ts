@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { ScrcpyService } from '../services/ScrcpyService';
+import { VideoFrameForwarder } from '../services/VideoFrameForwarder';
 import { DeviceInfoService } from '../services/DeviceInfoService';
 import { DeviceManager } from '../services/DeviceManager';
 import { AppManager } from '../services/AppManager';
@@ -20,9 +21,7 @@ export class ScrcpySidebarView {
     private readonly _context: vscode.ExtensionContext;
     private _disposables: vscode.Disposable[] = [];
     private _scrcpyService: ScrcpyService | null = null;
-    private _videoBuffer: Buffer[] = [];
-    private _videoBufferSize: number = 0; // Track total buffer size in bytes
-    private _sendVideoTimeout: NodeJS.Timeout | null = null;
+    private readonly _videoForwarder: VideoFrameForwarder;
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _appManager: AppManager | null = null;
@@ -30,9 +29,6 @@ export class ScrcpySidebarView {
     private _wasStreamingBeforeHidden: boolean = false;
     private _isViewVisible: boolean = true;
     private _adbShellService: AdbShellService;
-
-    // Maximum buffer size before dropping frames (2MB)
-    private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
 
     // Mirrors the webview's persistent mirroring setting so the extension knows the
     // mode before the webview has finished loading its settings and reported in
@@ -48,6 +44,16 @@ export class ScrcpySidebarView {
         this._context = context;
 
         this._adbShellService = new AdbShellService(context);
+
+        this._videoForwarder = new VideoFrameForwarder({
+            postMessage: (message) => this._view.webview.postMessage(message),
+            // In persistent mode the stream stays alive while the view is hidden, but
+            // nothing can be rendered, so the packet is dropped before the copy, the
+            // concat and the base64.
+            isDeliverable: () => !(this._persistentMirroringEnabled && !this._isViewVisible),
+            requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
+            onWarn: (message) => console.warn(message),
+        });
 
         this._persistentMirroringEnabled = context.globalState.get<boolean>(
             ScrcpySidebarView.PERSISTENT_MIRRORING_KEY,
@@ -409,45 +415,7 @@ export class ScrcpySidebarView {
 
         this._scrcpyService = new ScrcpyService(
             {
-                onVideoData: (data) => {
-                    // In persistent mode, skip hidden-view frame forwarding to save CPU.
-                    if (this._persistentMirroringEnabled && !this._isViewVisible) {
-                        return;
-                    }
-
-                    // Buffer video data and send in batches for better performance
-                    // Check buffer size limit to prevent unbounded memory growth
-                    if (
-                        this._videoBufferSize + data.length >
-                        ScrcpySidebarView.MAX_VIDEO_BUFFER_SIZE
-                    ) {
-                        // Buffer is too large, drop old frames to make room
-                        console.warn(
-                            `Video buffer exceeded ${ScrcpySidebarView.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`
-                        );
-                        this._videoBuffer = [];
-                        this._videoBufferSize = 0;
-                    }
-
-                    this._videoBuffer.push(data);
-                    this._videoBufferSize += data.length;
-
-                    if (!this._sendVideoTimeout) {
-                        this._sendVideoTimeout = setTimeout(() => {
-                            if (this._videoBuffer.length > 0) {
-                                const combined = Buffer.concat(this._videoBuffer);
-                                this._videoBuffer = [];
-                                this._videoBufferSize = 0;
-                                // Use base64 encoding instead of Array.from() for much better performance
-                                this._view.webview.postMessage({
-                                    type: 'video',
-                                    data: combined.toString('base64'),
-                                });
-                            }
-                            this._sendVideoTimeout = null;
-                        }, 8); // ~120fps batching for lower latency
-                    }
-                },
+                onVideoData: this._videoForwarder.handlePacket,
                 onError: (error) => {
                     vscode.window.showErrorMessage(`Scrcpy Error: ${error}`);
                     this._view.webview.postMessage({
@@ -486,12 +454,7 @@ export class ScrcpySidebarView {
     }
 
     private _stopStreaming() {
-        if (this._sendVideoTimeout) {
-            clearTimeout(this._sendVideoTimeout);
-            this._sendVideoTimeout = null;
-        }
-        this._videoBuffer = [];
-        this._videoBufferSize = 0;
+        this._videoForwarder.reset();
         this._scrcpyService?.stop();
         this._scrcpyService = null;
     }
@@ -903,24 +866,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    /**
-     * Resyncs the webview decoder after a gap in the forwarded video stream.
-     *
-     * In persistent mode frames are skipped while the view is hidden, so the decoder
-     * survives the gap holding references to frames it never received - resuming
-     * mid-GOP would show corruption, or error the decoder outright, until the next
-     * scheduled keyframe (the scrcpy server default is ~10s apart). Clearing the
-     * decoder makes it ignore everything until it sees SPS/PPS/IDR again, and the
-     * keyframe request makes that arrive in milliseconds rather than seconds.
-     */
+    /** Resyncs the webview decoder after a gap in the forwarded video stream. */
     private _resyncVideoStream(): void {
-        // Drop anything buffered from before the gap - it belongs to the old GOP
-        this._videoBuffer = [];
-        this._videoBufferSize = 0;
-
-        // Ordering matters: the reset must reach the webview before the new frames do
-        this._view.webview.postMessage({ type: 'video-reset' });
-        this._scrcpyService?.requestKeyFrame();
+        this._videoForwarder.resync();
     }
 
     public dispose() {

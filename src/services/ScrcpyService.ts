@@ -15,9 +15,10 @@ import {
     ScrcpyMediaStreamPacket,
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
+import type { VideoPacket } from './VideoFrameForwarder';
 
 export interface ScrcpyServiceEvents {
-    onVideoData: (data: Buffer) => void;
+    onVideoData: (packet: VideoPacket) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
@@ -256,9 +257,15 @@ export class ScrcpyService {
 
                     packetCount++;
 
-                    // Send video data to webview
+                    // Send video data to webview. The packet type and keyframe flag
+                    // travel with it so the forwarder knows where a dropped stream
+                    // may safely resume.
                     if (value.data) {
-                        this.events.onVideoData(Buffer.from(value.data));
+                        this.events.onVideoData({
+                            data: Buffer.from(value.data),
+                            isConfiguration: value.type === 'configuration',
+                            isKeyframe: value.type === 'data' && value.keyframe === true,
+                        });
                     }
                 } catch (readError) {
                     if (readError instanceof Error) {

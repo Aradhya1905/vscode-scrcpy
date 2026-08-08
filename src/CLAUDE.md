@@ -69,7 +69,7 @@ Services handle core business logic with event-driven callbacks.
 ```typescript
 // ✅ DO: Event-driven service pattern
 export interface ScrcpyServiceEvents {
-    onVideoData: (data: Buffer) => void;
+    onVideoData: (packet: VideoPacket) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
@@ -289,21 +289,26 @@ ADB server must be running before the extension can discover devices.
 
 ### Video Buffering
 
-Video data is buffered and sent in batches to avoid overwhelming the webview:
-```typescript
-// Buffer limit: 2MB to prevent memory issues
-private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
+Video batching lives in `VideoFrameForwarder`, not in the view or the panel. Both
+surfaces own one instance and differ only in `isDeliverable`:
 
-// Batch interval: ~8ms for low latency
-this._sendVideoTimeout = setTimeout(() => {
-    const combined = Buffer.concat(this._videoBuffer);
-    this._view.webview.postMessage({
-        type: 'video',
-        data: combined.toString('base64'),  // Base64 for efficiency
-    });
-}, 8);
+```typescript
+this._videoForwarder = new VideoFrameForwarder({
+    postMessage: (message) => this._view.webview.postMessage(message),
+    isDeliverable: () => !(this._persistentMirroringEnabled && !this._isViewVisible),
+    requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
+    onWarn: (message) => console.warn(message),
+});
+
+// Hand the bound handler straight to the service
+onVideoData: this._videoForwarder.handlePacket,
 ```
-See [views/ScrcpySidebarView.ts:366-398](views/ScrcpySidebarView.ts#L366-L398)
+
+It batches at ~8ms, caps the pending batch at 2MB, and enforces one invariant:
+after any gap (hidden surface, saturation, overflow) nothing is forwarded until a
+configuration or keyframe packet arrives.
+
+See [services/VideoFrameForwarder.ts](services/VideoFrameForwarder.ts)
 
 ### Visibility Handling
 
