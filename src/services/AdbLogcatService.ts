@@ -38,7 +38,7 @@ export interface AppProcess {
 
 export class AdbLogcatService {
     private logcatProcess: ChildProcess | null = null;
-    private onLogEntryCallback: ((entry: LogcatEntry) => void) | null = null;
+    private onLogEntriesCallback: ((entries: LogcatEntry[]) => void) | null = null;
     private onCrashCallback: ((crash: CrashLog) => void) | null = null;
     private onErrorCallback: ((error: string) => void) | null = null;
 
@@ -55,7 +55,14 @@ export class AdbLogcatService {
     private pendingLogs: LogcatEntry[] = [];
     private throttleTimer: NodeJS.Timeout | null = null;
     private readonly THROTTLE_INTERVAL_MS = 100;
-    private readonly MAX_BATCH_SIZE = 50;
+    // Entries leave as one message per tick, so this only bounds the size of a
+    // single structured clone. 50 used to cap the drain rate at 500 entries/s,
+    // which a chatty stream could outrun and silently truncate.
+    private readonly MAX_BATCH_SIZE = 500;
+
+    // Caps on state that would otherwise grow for the life of the stream
+    private readonly MAX_CRASH_BUFFER_LINES = 500;
+    private readonly MAX_PID_MAPPINGS = 512;
 
     // Line buffer for handling partial lines from stream
     private lineBuffer = '';
@@ -183,9 +190,7 @@ export class AdbLogcatService {
         if (this.pendingLogs.length === 0) return;
 
         const logsToSend = this.pendingLogs.splice(0, this.MAX_BATCH_SIZE);
-        for (const entry of logsToSend) {
-            this.onLogEntryCallback?.(entry);
-        }
+        this.onLogEntriesCallback?.(logsToSend);
 
         // If there are more pending logs, schedule another flush
         if (this.pendingLogs.length > 0 && !this.isPaused) {
@@ -300,6 +305,22 @@ export class AdbLogcatService {
         });
     }
 
+    /**
+     * PIDs are recycled by the OS and the heuristic in processLogLine adds an entry
+     * per unrecognised pid, so evict the oldest mapping once the map is full.
+     */
+    private rememberPidMapping(pid: number, packageName: string): void {
+        this.pidToPackage.set(pid, packageName);
+
+        while (this.pidToPackage.size > this.MAX_PID_MAPPINGS) {
+            const oldest = this.pidToPackage.keys().next();
+            if (oldest.done) {
+                break;
+            }
+            this.pidToPackage.delete(oldest.value);
+        }
+    }
+
     private async updatePidMapping(deviceId: string, packageName: string): Promise<void> {
         // Prefer pidof when available; fallback to ps parsing.
         const pids = await this.tryPidof(deviceId, packageName);
@@ -386,7 +407,7 @@ export class AdbLogcatService {
                     entry.tag.includes(this.targetPackage) ||
                     entry.message.includes(this.targetPackage)
                 ) {
-                    this.pidToPackage.set(entry.pid, this.targetPackage);
+                    this.rememberPidMapping(entry.pid, this.targetPackage);
                 } else {
                     return;
                 }
@@ -398,7 +419,12 @@ export class AdbLogcatService {
             this.currentCrashBuffer = [line];
         } else if (this.isCollectingCrash) {
             this.currentCrashBuffer.push(line);
-            if (this.isCrashEnd(entry)) {
+            // isCrashEnd can never fire if the stream stays inside AndroidRuntime,
+            // so bound the buffer instead of letting it grow for the whole session.
+            if (
+                this.isCrashEnd(entry) ||
+                this.currentCrashBuffer.length >= this.MAX_CRASH_BUFFER_LINES
+            ) {
                 this.processCrashBuffer();
                 this.isCollectingCrash = false;
                 this.currentCrashBuffer = [];
@@ -452,8 +478,10 @@ export class AdbLogcatService {
      */
     private applyGrouping(entry: LogcatEntry): void {
         const entryTime = entry.timestamp.getTime();
-        const isStackTrace = this.isStackTraceLine(entry.message);
         const isErrorEntry = entry.level === 'E' || entry.level === 'F';
+        // Every use of isStackTrace below sits behind isErrorEntry, so the 5 regexes
+        // only need to run for E/F lines rather than for every line on the stream.
+        const isStackTrace = isErrorEntry && this.isStackTraceLine(entry.message);
 
         // Check if this entry should continue the current group
         const shouldContinueGroup =
@@ -651,8 +679,8 @@ export class AdbLogcatService {
         this.onCrashCallback?.(crash);
     }
 
-    onLogEntry(callback: (entry: LogcatEntry) => void): void {
-        this.onLogEntryCallback = callback;
+    onLogEntries(callback: (entries: LogcatEntry[]) => void): void {
+        this.onLogEntriesCallback = callback;
     }
 
     onCrash(callback: (crash: CrashLog) => void): void {
@@ -669,7 +697,7 @@ export class AdbLogcatService {
 
     dispose(): void {
         this.stopStreaming();
-        this.onLogEntryCallback = null;
+        this.onLogEntriesCallback = null;
         this.onCrashCallback = null;
         this.onErrorCallback = null;
     }

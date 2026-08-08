@@ -65,12 +65,17 @@ export default function ShellLogsApp() {
                 setShellExecuting(false);
                 break;
 
-            case 'logcat-entry':
+            case 'logcat-batch': {
+                const incoming = message.entries;
+                if (incoming.length === 0) {
+                    break;
+                }
                 setLogEntries((prev) => {
-                    const next = [...prev, message.entry];
+                    const next = prev.concat(incoming);
                     return next.length > 2000 ? next.slice(next.length - 2000) : next;
                 });
                 break;
+            }
             case 'crash-detected':
                 setCrashes((prev) => {
                     const next = [message.crash, ...prev];

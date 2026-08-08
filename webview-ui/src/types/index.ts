@@ -219,7 +219,7 @@ export type ExtensionMessage =
     | { type: 'shell-quick-commands'; commands: QuickCommand[] }
     | { type: 'shell-history'; history: string[] }
     | { type: 'shell-suggestions'; suggestions: string[] }
-    | { type: 'logcat-entry'; entry: LogcatEntry }
+    | { type: 'logcat-batch'; entries: LogcatEntry[] }
     | { type: 'crash-detected'; crash: CrashLog }
     | { type: 'logcat-error'; error: string }
     | { type: 'logcat-started' }

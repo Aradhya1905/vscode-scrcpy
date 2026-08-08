@@ -57,8 +57,8 @@ export class LogcatPanel {
             },
         });
 
-        this._logcatService.onLogEntry((entry) => {
-            this._postMessage({ type: 'logcat-entry', entry });
+        this._logcatService.onLogEntries((entries) => {
+            this._postMessage({ type: 'logcat-batch', entries });
         });
 
         this._logcatService.onCrash((crash) => {
