@@ -23,7 +23,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     const sidebarViewProvider = vscode.window.registerWebviewViewProvider(
         ScrcpySidebarViewProvider.viewType,
-        new ScrcpySidebarViewProvider(context)
+        new ScrcpySidebarViewProvider(context),
+        { webviewOptions: { retainContextWhenHidden: true } }
     );
 
     // Keep legacy commands for backward compatibility

@@ -14,6 +14,7 @@ export default function MirrorApp() {
     // Load settings from storage
     const { settings, isLoaded, updateSetting, resetSettings } = useSettingsStorage();
     const showDeviceSkin = settings.showDeviceSkin ?? true;
+    const persistentMirroring = settings.persistentMirroring ?? false;
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
@@ -102,6 +103,18 @@ export default function MirrorApp() {
     useEffect(() => {
         postMessage({ command: 'get-device-list' });
     }, [postMessage]);
+
+    // Keep extension behavior in sync with toolbar setting.
+    useEffect(() => {
+        if (!isLoaded) {
+            return;
+        }
+
+        postMessage({
+            command: 'set-persistent-mirroring',
+            enabled: persistentMirroring,
+        });
+    }, [isLoaded, persistentMirroring, postMessage]);
 
     const handleSelectDevice = useCallback(
         (deviceId: string) => {
@@ -405,6 +418,10 @@ export default function MirrorApp() {
                 cursorStyle={settings.cursorStyle}
                 onCursorStyleChange={(value) => updateSetting('cursorStyle', value)}
                 onResetSettings={resetSettings}
+                persistentMirroring={persistentMirroring}
+                onPersistentMirroringChange={(enabled) =>
+                    updateSetting('persistentMirroring', enabled)
+                }
             />
         </>
     );

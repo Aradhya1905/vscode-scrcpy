@@ -15,6 +15,7 @@ interface AppSettings {
     fps?: string;
     bitrate?: string;
     cursorStyle?: 'crosshair' | 'default';
+    persistentMirroring?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -31,6 +32,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     fps: '60',
     bitrate: '8',
     cursorStyle: 'crosshair',
+    persistentMirroring: false,
 };
 
 const STORAGE_KEY = 'scrcpy-app-settings';

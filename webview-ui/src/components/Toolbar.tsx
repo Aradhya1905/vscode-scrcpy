@@ -50,6 +50,8 @@ interface ToolbarProps {
     cursorStyle?: 'crosshair' | 'default';
     onCursorStyleChange?: (style: 'crosshair' | 'default') => void;
     onResetSettings?: () => void;
+    persistentMirroring?: boolean;
+    onPersistentMirroringChange?: (enabled: boolean) => void;
 }
 
 export const Toolbar = memo(function Toolbar({
@@ -84,6 +86,8 @@ export const Toolbar = memo(function Toolbar({
     cursorStyle,
     onCursorStyleChange,
     onResetSettings,
+    persistentMirroring = false,
+    onPersistentMirroringChange,
 }: ToolbarProps) {
     const isConnected = status === 'connected';
     const isConnecting = status === 'connecting';
@@ -147,6 +151,8 @@ export const Toolbar = memo(function Toolbar({
                     onBitrateChange={onBitrateChange}
                     cursorStyle={cursorStyle}
                     onCursorStyleChange={onCursorStyleChange}
+                    persistentMirroring={persistentMirroring}
+                    onPersistentMirroringChange={onPersistentMirroringChange}
                     onResetSettings={onResetSettings}
                 />
             )}

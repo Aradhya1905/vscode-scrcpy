@@ -26,7 +26,9 @@ export class ScrcpySidebarView {
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _appManager: AppManager | null = null;
+    private _persistentMirroringEnabled: boolean = false;
     private _wasStreamingBeforeHidden: boolean = false;
+    private _isViewVisible: boolean = true;
     private _adbShellService: AdbShellService;
 
     // Maximum buffer size before dropping frames (2MB)
@@ -111,12 +113,12 @@ export class ScrcpySidebarView {
         // Set initial HTML
         this._view.webview.html = this._getHtmlForWebview();
 
-        // Handle visibility changes
+        // Handle visibility changes with toggleable persistence
         this._view.onDidChangeVisibility(
             async () => {
+                this._isViewVisible = this._view.visible;
                 if (this._view.visible) {
-                    // If streaming was active before hiding, restart it
-                    if (this._wasStreamingBeforeHidden) {
+                    if (!this._persistentMirroringEnabled && this._wasStreamingBeforeHidden) {
                         this._wasStreamingBeforeHidden = false;
                         // Small delay to let ADB settle after previous stop
                         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -134,16 +136,13 @@ export class ScrcpySidebarView {
                                 message: `Failed to resume streaming: ${errorMessage}`,
                             });
                         }
-                    } else {
-                        // Only refresh device list if not auto-resuming streaming
+                    } else if (!this._scrcpyService?.isActive()) {
+                        // Refresh device list when becoming visible
                         this._deviceManager?.refreshDeviceList();
                     }
-                } else {
-                    // Track if we were streaming before becoming hidden
-                    if (this._scrcpyService?.isActive()) {
-                        this._wasStreamingBeforeHidden = true;
-                        this._stopStreaming();
-                    }
+                } else if (!this._persistentMirroringEnabled && this._scrcpyService?.isActive()) {
+                    this._wasStreamingBeforeHidden = true;
+                    this._stopStreaming();
                 }
             },
             null,
@@ -251,6 +250,9 @@ export class ScrcpySidebarView {
                         break;
                     case 'paste':
                         await this._handlePaste(message.text);
+                        break;
+                    case 'set-persistent-mirroring':
+                        this._persistentMirroringEnabled = !!message.enabled;
                         break;
                 }
             },
@@ -367,6 +369,11 @@ export class ScrcpySidebarView {
         this._scrcpyService = new ScrcpyService(
             {
                 onVideoData: (data) => {
+                    // In persistent mode, skip hidden-view frame forwarding to save CPU.
+                    if (this._persistentMirroringEnabled && !this._isViewVisible) {
+                        return;
+                    }
+
                     // Buffer video data and send in batches for better performance
                     // Check buffer size limit to prevent unbounded memory growth
                     if (

@@ -159,6 +159,7 @@ export type WebviewMessage =
     | { command: 'show-touches'; enabled: boolean }
     | { command: 'stay-awake'; enabled: boolean }
     | { command: 'dark-mode'; enabled: boolean }
+    | { command: 'set-persistent-mirroring'; enabled: boolean }
     | { command: 'pick-apk-files' }
     | { command: 'install-apk'; files?: string[] }
     | { command: 'get-device-info' }
