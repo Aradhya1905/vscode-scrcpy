@@ -183,6 +183,77 @@ rather than a default.
   frame.
 - `npm run typecheck && npm run lint && npm run format:check` green.
 
+## Outcome
+
+Shipped on `feature/token-cleanup-interaction`. `npm run typecheck`, the webview
+`tsc -b && vite build`, `npm run lint` and `npm run format:check` are all green.
+
+### What shipped as written
+
+- `Placeholder.tsx` is a router over `IdleState`, `ConnectingState` and
+  `ErrorState`. The silhouette moved into a shared `DeviceSilhouette` used by
+  idle and connecting only; the error surface is a full-width card.
+- The hardcoded resolution is gone. `rg -n "1080|2400" webview-ui/src/components`
+  returns nothing. The idle spec line is assembled from the model, the Android
+  version and the resolution actually decoded, and is omitted entirely when
+  there is nothing to report.
+- The arc spinner is a `transform`-only shimmer. The `rgba(48,54,61,.5)` stroke
+  and the `#bc8cff` → `#58a6ff` gradient stops are gone; the sweep is
+  `color-mix(in srgb, var(--accent) 16%, transparent)`.
+- `connect-progress` carries `'pushing-server' | 'starting' | 'awaiting-video'`
+  from `ScrcpyService` through `ScrcpySidebarView` to the webview, which labels
+  each stage and falls back to "Connecting…" when none has arrived.
+- A 15s per-stage stall timer surfaces "Taking longer than usual." with Cancel.
+  It restarts on every stage change, so it measures time in one stage rather
+  than total connect time — a slow but advancing connect never trips it.
+- The error card derives its title from the failure (`errorKinds.ts`), shows the
+  raw message in `--font-mono`, selectable and wrapped, and offers Retry, Check
+  devices, Restart adb server and Troubleshooting.
+- `EmptyDevices` replaces the inline-styled empty list.
+- The backdrop default is `--backdrop-default` in `tokens.css`, derived from
+  `--accent` and `--surface`.
+
+### Deviations
+
+- **Where the empty list lives.** The plan points at `Toolbar.tsx:228-237`, but
+  [05](05-toolbar-status-rework.md) had already moved that markup into
+  `DeviceSelector`'s dropdown. `EmptyDevices` is consumed there instead.
+- **Diagnostics needed a host-level ADB call.** `AdbShellService` could only run
+  commands scoped to a device (`-s <id>`), which is exactly what is unavailable
+  when the device list is the problem. Added `executeHostCommand(args)`, used by
+  `adb devices -l` and `adb kill-server` / `adb start-server`. Both are
+  read-only with respect to the device; neither touches device state.
+- **The gradient default had to be removed from `DEFAULT_SETTINGS`, not just
+  from `MirrorApp`.** `useSettingsStorage` seeded every install with the pink
+  and periwinkle pair, so a theme-derived default would never have applied.
+  They are now `undefined`, and `MirrorApp` only builds a gradient string when
+  both colours are set. Anyone who has run the panel before has the pair
+  persisted in `vscode.getState()` and sees no change; a fresh install, and a
+  settings reset, get the theme-derived backdrop.
+- **`constants.ts` cleanup.** `VIDEO_CONTAINER_BACKGROUND_GRADIENT` was exported
+  but imported nowhere, and its comments held the pink/blue literals while
+  claiming to control the backdrop. Replaced with a pointer to
+  `--backdrop-default`, which is what actually controls it.
+- **A README `## Troubleshooting` section did not exist.** Added one, keyed to
+  the same failure causes the error card classifies; the Troubleshooting action
+  opens it via `vscode.env.openExternal`.
+- **Two extra pieces of `MirrorApp` state.** `lastDeviceInfo` and
+  `lastVideoSize` deliberately survive a disconnect. The status chip clears its
+  live fields on purpose ([05](05-toolbar-status-rework.md)), but the idle
+  surface is supposed to report what was observed this session, so it cannot
+  read the same state.
+
+### Still needs a human in an Extension Development Host
+
+- Watching the stage label advance through pushing → starting → awaiting video
+  on a real device, and confirming the stall line appears when the adb server is
+  killed mid-connect.
+- The four error actions against a genuinely unauthorised / unplugged device,
+  including whether each failure classifies to the right title.
+- The default backdrop on Dark+ and Light+ side by side.
+- DevTools → Performance on the connecting skeleton, confirming no paint per
+  animation frame.
+
 ## Rollback
 
 The webview side reverts as one commit. The `connect-progress` message and the

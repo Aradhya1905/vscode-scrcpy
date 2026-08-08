@@ -95,9 +95,25 @@
   --dur-base: 180ms;
   --ease: cubic-bezier(0.2, 0, 0.2, 1);
 
-  /* ===== LAYOUT (not theme-dependent) ===== */
+  /* ===== BACKDROP =====
+     Default behind the device frame and every pre-stream surface. It is the
+     largest coloured area in the panel, so it follows the theme instead of
+     being a fixed pair of colours. A saved gradientColor1/gradientColor2 pair
+     still overrides it. See docs/changes/06-state-surfaces.md */
+  --backdrop-default: radial-gradient(
+    circle at 50% 40%,
+    color-mix(in srgb, var(--accent) 12%, var(--surface)) 0%,
+    var(--surface) 100%
+  );
+
+  /* ===== LAYOUT (not theme-dependent) =====
+     A width plus an aspect ratio, not a width plus a height: the frame has to
+     scale down with the sidebar instead of being clipped by it. 100vw is the
+     webview viewport, which *is* the sidebar, so the min() below is what makes
+     the frame shrink. See docs/changes/05-toolbar-status-rework.md */
   --phone-width: 290px;
-  --phone-height: 630px;
+  --phone-aspect: 69.1 / 151.7;
+  --phone-frame-width: min(var(--phone-width), calc(100vw - 40px));
 }
 
 /* Light themes: the dark-surface shadow recipe reads as dirt. Soften the

@@ -20,11 +20,14 @@ import {
     MousePointer,
     RotateCcw,
     AlertTriangle,
+    PanelTop,
+    PanelBottom,
 } from 'lucide-react';
 
 interface SettingsPanelProps {
     onClose: () => void;
     toolbarPosition?: 'top' | 'bottom';
+    onToolbarPositionChange?: (position: 'top' | 'bottom') => void;
     showDeviceSkin?: boolean;
     onShowDeviceSkinChange?: (show: boolean) => void;
     gradientColor1?: string;
@@ -50,8 +53,14 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({
     onClose,
+    toolbarPosition = 'bottom',
+    onToolbarPositionChange,
     showDeviceSkin = true,
     onShowDeviceSkinChange,
+    // Where the colour pickers start when the user has never set a pair. This
+    // is a suggestion, not the app's backdrop default - with no saved colours
+    // the backdrop is --backdrop-default, derived from the VS Code theme.
+    // See docs/changes/06-state-surfaces.md
     gradientColor1 = 'rgba(238, 174, 202, 1)',
     gradientColor2 = 'rgba(148, 187, 233, 1)',
     onGradientColor1Change,
@@ -81,6 +90,7 @@ export function SettingsPanel({
     const [showGradientPicker, setShowGradientPicker] = useState(false);
     const [showSkinColorPicker, setShowSkinColorPicker] = useState(false);
     const [showCursorDropdown, setShowCursorDropdown] = useState(false);
+    const [showToolbarPositionDropdown, setShowToolbarPositionDropdown] = useState(false);
     const [showResetConfirm, setShowResetConfirm] = useState(false);
 
     // Sync local state with props
@@ -180,11 +190,28 @@ export function SettingsPanel({
         },
     ];
 
+    const toolbarPositionOptions = [
+        {
+            value: 'bottom' as const,
+            label: 'Bottom',
+            desc: 'Controls below the screen',
+            icon: PanelBottom,
+            color: 'var(--vsc-blue)',
+        },
+        {
+            value: 'top' as const,
+            label: 'Top',
+            desc: 'Controls above the screen',
+            icon: PanelTop,
+            color: 'var(--vsc-green)',
+        },
+    ];
+
     return (
-        <div className="panel-overlay">
+        <div className="panel-overlay" role="dialog" aria-modal="true" aria-label="Settings">
             <div className="panel-header">
                 <span className="panel-title">Settings</span>
-                <button className="panel-close-btn" onClick={onClose}>
+                <button className="panel-close-btn" onClick={onClose} aria-label="Close settings">
                     <X size={14} />
                 </button>
             </div>
@@ -467,6 +494,74 @@ export function SettingsPanel({
                                             <div className="dropdown-item-desc">{opt.desc}</div>
                                         </div>
                                         {cursorStyle === opt.value && (
+                                            <Check
+                                                className="dropdown-item-check"
+                                                size={12}
+                                                style={{ color: opt.color }}
+                                            />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Toolbar Position Dropdown */}
+                    <div style={{ position: 'relative' }}>
+                        <button
+                            className="setting-item"
+                            onClick={() => {
+                                setShowToolbarPositionDropdown(!showToolbarPositionDropdown);
+                                setShowQualityDropdown(false);
+                                setShowFPSDropdown(false);
+                                setShowBitrateDropdown(false);
+                                setShowCursorDropdown(false);
+                            }}
+                        >
+                            <div className="setting-info">
+                                {toolbarPosition === 'top' ? (
+                                    <PanelTop className="setting-icon" size={16} />
+                                ) : (
+                                    <PanelBottom className="setting-icon" size={16} />
+                                )}
+                                <span className="setting-label">Toolbar Position</span>
+                            </div>
+                            <div className="setting-value">
+                                <span>
+                                    {
+                                        toolbarPositionOptions.find(
+                                            (p) => p.value === toolbarPosition
+                                        )?.label
+                                    }
+                                </span>
+                            </div>
+                        </button>
+
+                        {showToolbarPositionDropdown && (
+                            <div className="dropdown-menu">
+                                {toolbarPositionOptions.map((opt) => (
+                                    <button
+                                        key={opt.value}
+                                        className="dropdown-item"
+                                        onClick={() => {
+                                            onToolbarPositionChange?.(opt.value);
+                                            setShowToolbarPositionDropdown(false);
+                                        }}
+                                    >
+                                        <div
+                                            className="dropdown-item-icon"
+                                            style={{
+                                                background: `${opt.color}33`,
+                                                color: opt.color,
+                                            }}
+                                        >
+                                            <opt.icon size={12} />
+                                        </div>
+                                        <div className="dropdown-item-info">
+                                            <div className="dropdown-item-label">{opt.label}</div>
+                                            <div className="dropdown-item-desc">{opt.desc}</div>
+                                        </div>
+                                        {toolbarPosition === opt.value && (
                                             <Check
                                                 className="dropdown-item-check"
                                                 size={12}

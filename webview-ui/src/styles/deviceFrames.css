@@ -3,7 +3,8 @@
 .samsung-note20ultra-frame {
   position: relative;
   aspect-ratio: 77.2 / 164.8;
-  width: calc(var(--phone-height) * 0.4684);
+  width: var(--phone-frame-width);
+  max-width: 100%;
   border-radius: 12px;
   padding: 0;
   box-shadow:
@@ -15,7 +16,7 @@
 .samsung-note20ultra-screen {
   position: relative;
   width: 100%;
-  height: var(--phone-height);
+  height: 100%;
   background: #000;
   border-radius: 12px;
   overflow: hidden;
@@ -92,8 +93,9 @@
 /* Aspect ratio: 69.1mm x 151.7mm = 0.4555 */
 .samsung-s20-frame {
   position: relative;
-  aspect-ratio: 69.1 / 151.7;
-  width: calc(var(--phone-height) * 0.4555);
+  aspect-ratio: var(--phone-aspect);
+  width: var(--phone-frame-width);
+  max-width: 100%;
   border-radius: 10px;
   padding: 0;
   box-shadow:
@@ -105,7 +107,7 @@
 .samsung-s20-screen {
   position: relative;
   width: 100%;
-  height: var(--phone-height);
+  height: 100%;
   background: #000;
   border-radius: 10px;
   overflow: hidden;

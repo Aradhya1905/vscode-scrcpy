@@ -16,11 +16,22 @@ import {
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
 
+/**
+ * The steps between "start" and the first decoded frame. Starting a stream
+ * pushes the server jar, launches it, then waits for the video socket to hand
+ * over its first packet - on a cold device that is several seconds, so the
+ * webview labels the stage instead of showing one undifferentiated spinner.
+ * See docs/changes/06-state-surfaces.md
+ */
+export type ScrcpyConnectStage = 'pushing-server' | 'starting' | 'awaiting-video';
+
 export interface ScrcpyServiceEvents {
     onVideoData: (data: Buffer) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
+    /** Optional: consumers that don't render progress can omit it */
+    onProgress?: (stage: ScrcpyConnectStage) => void;
 }
 
 export interface ScrcpySettings {
@@ -86,12 +97,14 @@ export class ScrcpyService {
             this.adb = await this.adbClient.createAdb(selectedDevice);
 
             // Step 4: Push scrcpy server to device
+            this.events.onProgress?.('pushing-server');
             await this.pushServer();
 
             // Set running flag BEFORE starting scrcpy so video stream loop works
             this.isRunning = true;
 
             // Step 5: Start scrcpy
+            this.events.onProgress?.('starting');
             await this.startScrcpy();
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -164,6 +177,8 @@ export class ScrcpyService {
 
         // Handle video stream
         if (this.scrcpyClient.videoStream) {
+            // The server is up; everything from here is waiting on the device
+            this.events.onProgress?.('awaiting-video');
             const videoStream = await this.scrcpyClient.videoStream;
 
             // Get initial video size

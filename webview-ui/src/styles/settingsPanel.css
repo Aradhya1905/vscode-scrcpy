@@ -82,8 +82,13 @@
   transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
-.quick-action-btn:hover {
+.quick-action-btn:hover:not(:disabled) {
   background: var(--vsc-tertiary);
+}
+
+.quick-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .quick-action-icon {
@@ -103,11 +108,11 @@
   transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
-.quick-action-btn:hover .quick-action-icon {
+.quick-action-btn:hover:not(:disabled) .quick-action-icon {
   background: var(--surface-hover);
 }
 
-.quick-action-btn:hover .quick-action-icon svg {
+.quick-action-btn:hover:not(:disabled) .quick-action-icon svg {
   transform: scale(1.125);
 }
 

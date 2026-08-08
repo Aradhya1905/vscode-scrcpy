@@ -38,6 +38,10 @@ export class ScrcpySidebarView {
     // mode before the webview has finished loading its settings and reported in
     private static readonly PERSISTENT_MIRRORING_KEY = 'scrcpy.persistentMirroring';
 
+    // Target of the error surface's "Troubleshooting" action
+    private static readonly TROUBLESHOOTING_URL =
+        'https://github.com/Aradhya1905/vscode-scrcpy#troubleshooting';
+
     public static revive(webviewView: vscode.WebviewView, context: vscode.ExtensionContext) {
         ScrcpySidebarView.currentView = new ScrcpySidebarView(webviewView, context);
     }
@@ -270,6 +274,17 @@ export class ScrcpySidebarView {
                     case 'paste':
                         await this._handlePaste(message.text);
                         break;
+                    case 'check-devices':
+                        await this._handleCheckDevices();
+                        break;
+                    case 'restart-adb-server':
+                        await this._handleRestartAdbServer();
+                        break;
+                    case 'open-troubleshooting':
+                        await vscode.env.openExternal(
+                            vscode.Uri.parse(ScrcpySidebarView.TROUBLESHOOTING_URL)
+                        );
+                        break;
                     case 'set-persistent-mirroring': {
                         const enabled = !!message.enabled;
                         this._persistentMirroringEnabled = enabled;
@@ -383,6 +398,67 @@ export class ScrcpySidebarView {
         }
     }
 
+    /**
+     * Runs `adb devices -l` and hands the raw output back to the error surface.
+     *
+     * The point is to show the user the `unauthorized` / `offline` line itself
+     * rather than a paraphrase of it - the same thing they would run in a
+     * terminal, read-only, and with no device-state mutation.
+     */
+    private async _handleCheckDevices(): Promise<void> {
+        try {
+            const result = await this._adbShellService.executeHostCommand(['devices', '-l']);
+            const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'check-devices',
+                success: result.exitCode === 0,
+                output: output || 'adb devices produced no output.',
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'check-devices',
+                success: false,
+                output: message,
+            });
+        }
+    }
+
+    /**
+     * `adb kill-server && adb start-server`, the fix for a large share of real
+     * connection failures. It restarts the *host* daemon only - nothing on the
+     * device is touched - and refreshes the device list once it comes back.
+     */
+    private async _handleRestartAdbServer(): Promise<void> {
+        try {
+            const kill = await this._adbShellService.executeHostCommand(['kill-server']);
+            const start = await this._adbShellService.executeHostCommand(['start-server']);
+            const success = kill.exitCode === 0 && start.exitCode === 0;
+            const output =
+                [kill.stdout, kill.stderr, start.stdout, start.stderr].filter(Boolean).join('\n') ||
+                (success ? 'adb server restarted.' : 'adb server restart reported no output.');
+
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'restart-adb-server',
+                success,
+                output,
+            });
+
+            await this._deviceManager?.refreshDeviceList();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'restart-adb-server',
+                success: false,
+                output: message,
+            });
+        }
+    }
+
     private async _startStreaming() {
         if (this._scrcpyService?.isActive()) {
             return;
@@ -437,6 +513,12 @@ export class ScrcpySidebarView {
                     this._view.webview.postMessage({
                         type: 'error',
                         message: error,
+                    });
+                },
+                onProgress: (stage) => {
+                    this._view.webview.postMessage({
+                        type: 'connect-progress',
+                        stage,
                     });
                 },
                 onConnected: () => {

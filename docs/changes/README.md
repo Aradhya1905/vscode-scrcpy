@@ -15,8 +15,8 @@ and point back to these documents.
 | 02 | Design token layer / theme awareness | [02-design-tokens.md](02-design-tokens.md) | [`.claude/plans/02-design-tokens.md`](../../.claude/plans/02-design-tokens.md) | Done |
 | 03 | Pan re-render performance | [03-pan-rerender-perf.md](03-pan-rerender-perf.md) | [`.claude/plans/03-pan-rerender-perf.md`](../../.claude/plans/03-pan-rerender-perf.md) | Done |
 | 04 | Token cleanup / interaction pass | [04-token-cleanup-interaction.md](04-token-cleanup-interaction.md) | [`.claude/plans/04-token-cleanup-interaction.md`](../../.claude/plans/04-token-cleanup-interaction.md) | Done |
-| 05 | Toolbar & status rework | [05-toolbar-status-rework.md](05-toolbar-status-rework.md) | [`.claude/plans/05-toolbar-status-rework.md`](../../.claude/plans/05-toolbar-status-rework.md) | Planned |
-| 06 | State surfaces | [06-state-surfaces.md](06-state-surfaces.md) | [`.claude/plans/06-state-surfaces.md`](../../.claude/plans/06-state-surfaces.md) | Planned |
+| 05 | Toolbar & status rework | [05-toolbar-status-rework.md](05-toolbar-status-rework.md) | [`.claude/plans/05-toolbar-status-rework.md`](../../.claude/plans/05-toolbar-status-rework.md) | Done |
+| 06 | State surfaces | [06-state-surfaces.md](06-state-surfaces.md) | [`.claude/plans/06-state-surfaces.md`](../../.claude/plans/06-state-surfaces.md) | Done |
 | 07 | Feedback & discoverability | [07-feedback-discoverability.md](07-feedback-discoverability.md) | [`.claude/plans/07-feedback-discoverability.md`](../../.claude/plans/07-feedback-discoverability.md) | Planned |
 
 Changes 04–07 are the UI overhaul that 02 deliberately deferred. 04 finishes the
@@ -25,10 +25,17 @@ token migration and is zero-risk; 05 is where the panel starts to look designed;
 05 consumes 04's elevation and focus tokens, and 06 reuses the `device-info`
 handling that 05 introduces.
 
-04 landed on `feature/token-cleanup-interaction`. Its [Outcome
-section](04-token-cleanup-interaction.md#outcome) records what shipped beyond
-the written plan and which of its checks still need a human eye in a running
-Extension Development Host.
+04, 05 and 06 all landed on `feature/token-cleanup-interaction`. Their Outcome
+sections ([04](04-token-cleanup-interaction.md#outcome),
+[05](05-toolbar-status-rework.md#outcome),
+[06](06-state-surfaces.md#outcome)) record what shipped beyond the written
+plans and which of their checks still need a human eye in a running Extension
+Development Host.
+
+07 can now build on 06: the pre-stream surfaces live in
+`webview-ui/src/components/states/`, `.state-action` is the shared quiet button
+for anything added to them, and `connect-progress` / `diagnostic-result` are
+precedents for any further extension → webview status message.
 
 ## Not yet scheduled
 

@@ -1,7 +1,18 @@
 import { useRef, useCallback } from 'react';
 
+export interface VideoSize {
+    width: number;
+    height: number;
+}
+
 interface UseVideoDecoderOptions {
     onLog: (message: string, level?: 'info' | 'warn' | 'error') => void;
+    /**
+     * Fired when the decoded stream changes resolution, and once with 0x0 on
+     * reset. `getVideoSize()` is a ref read, which cannot drive a render - the
+     * status chip needs the size pushed to it.
+     */
+    onVideoSizeChange?: (size: VideoSize) => void;
 }
 
 // Parse SPS to get profile/level for codec string
@@ -85,7 +96,7 @@ function splitNalUnits(data: Uint8Array): Uint8Array[] {
     return units;
 }
 
-export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
+export function useVideoDecoder({ onLog, onVideoSizeChange }: UseVideoDecoderOptions) {
     const decoderRef = useRef<VideoDecoder | null>(null);
     const spsNalRef = useRef<Uint8Array | null>(null);
     const ppsNalRef = useRef<Uint8Array | null>(null);
@@ -93,7 +104,12 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
     const frameCountRef = useRef(0);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-    const videoSizeRef = useRef({ width: 0, height: 0 });
+    const videoSizeRef = useRef<VideoSize>({ width: 0, height: 0 });
+
+    // Held in a ref so an unstable callback doesn't re-create renderFrame,
+    // which would otherwise force a new VideoDecoder on every render.
+    const onVideoSizeChangeRef = useRef(onVideoSizeChange);
+    onVideoSizeChangeRef.current = onVideoSizeChange;
 
     // Use real timestamps based on when frames arrive for better synchronization
     const startTimeRef = useRef<number | null>(null);
@@ -136,6 +152,7 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
                 canvas.width = frame.displayWidth;
                 canvas.height = frame.displayHeight;
                 onLog(`Video size: ${frame.displayWidth}x${frame.displayHeight}`);
+                onVideoSizeChangeRef.current?.(videoSizeRef.current);
             }
 
             ctx.drawImage(frame, 0, 0);
@@ -363,6 +380,9 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         startTimeRef.current = null;
         lastFrameTimeRef.current = 0;
         videoSizeRef.current = { width: 0, height: 0 };
+        // Push the clear too, so a status readout doesn't keep showing the
+        // resolution of a stream that has ended.
+        onVideoSizeChangeRef.current?.(videoSizeRef.current);
         droppedFramesRef.current = 0;
         lastDropLogTimeRef.current = 0;
         // Keep decodeBufferRef for reuse

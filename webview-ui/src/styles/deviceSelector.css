@@ -12,17 +12,17 @@
   width: 100%;
   height: 34px;
   padding: 0 10px;
-  background: rgba(22, 27, 34, 0.65);
-  border: 1px solid var(--vsc-border);
-  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   color: var(--vsc-text);
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .device-selector-btn:hover {
-  background: rgba(28, 33, 40, 0.85);
-  border-color: rgba(88, 166, 255, 0.35);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
 .device-selector-btn:active {
@@ -83,22 +83,6 @@
   white-space: nowrap;
 }
 
-.toolbar-device-dropdown {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--vsc-secondary);
-  border: 1px solid var(--vsc-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-2);
-  z-index: 100;
-  overflow: hidden;
-  min-width: 150px;
-  max-width: fit-content;
-  animation: slideUp var(--dur-base) var(--ease);
-}
-
 .device-dropdown {
   position: absolute;
   bottom: calc(100% + 4px);
@@ -148,8 +132,8 @@
 }
 
 .device-dropdown-refresh {
-  border: 1px solid rgba(48, 54, 61, 0.75);
-  background: rgba(22, 27, 34, 0.55);
+  border: 1px solid var(--border);
+  background: var(--surface);
   color: var(--vsc-text);
   border-radius: 10px;
   padding: 6px 10px;
@@ -160,27 +144,13 @@
 }
 
 .device-dropdown-refresh:hover {
-  background: rgba(28, 33, 40, 0.85);
-  border-color: rgba(188, 140, 255, 0.25);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
   transform: translateY(-1px);
 }
 
-.device-dropdown-empty {
-  padding: 12px;
-}
-
-.device-dropdown-empty-title {
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--vsc-text);
-}
-
-.device-dropdown-empty-hint {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--vsc-text-muted);
-  line-height: 1.35;
-}
+/* The empty list is EmptyDevices (placeholder.css) - see
+   docs/changes/06-state-surfaces.md */
 
 .device-list {
   max-height: 200px;
@@ -205,7 +175,7 @@
 }
 
 .device-item.selected {
-  background: rgba(88, 166, 255, 0.1);
+  background: var(--accent-soft);
 }
 
 .device-item.disabled {

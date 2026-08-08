@@ -107,6 +107,44 @@ export class AdbShellService {
     }
 
     /**
+     * Execute an ADB command that is not scoped to a device (`adb devices`,
+     * `adb kill-server`, ...). Used by the error surface's diagnostics, which
+     * have to run when no device is reachable and so cannot pass `-s`.
+     */
+    async executeHostCommand(args: string[]): Promise<ShellCommandResult> {
+        const startTime = Date.now();
+
+        return new Promise((resolve, reject) => {
+            const adb = spawn(AdbPathResolver.getAdbCommand(), args, { windowsHide: true });
+
+            let stdout = '';
+            let stderr = '';
+
+            adb.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+
+            adb.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+
+            adb.on('close', (code) => {
+                resolve({
+                    command: `adb ${args.join(' ')}`,
+                    stdout: stdout.trim(),
+                    stderr: stderr.trim(),
+                    exitCode: code ?? 0,
+                    duration: Date.now() - startTime,
+                });
+            });
+
+            adb.on('error', (err) => {
+                reject(new Error(`Failed to execute ADB command: ${err.message}`));
+            });
+        });
+    }
+
+    /**
      * Basic sanitization for shell commands (runs on the device).
      * This intentionally stays conservative; we trim, and let ADB shell handle quoting/pipes.
      */

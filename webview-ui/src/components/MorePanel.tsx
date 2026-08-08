@@ -19,12 +19,22 @@ import {
     Coffee,
     Moon,
     Sun,
+    ChevronLeft,
+    Circle,
+    Square,
 } from 'lucide-react';
 import { vscode } from '../vscode';
 
 interface MorePanelProps {
     onClose: () => void;
     toolbarPosition?: 'top' | 'bottom';
+    // Device navigation. The toolbar hides its own nav group on a narrow
+    // sidebar (see the 280px rule in toolbar.css) and this section takes over;
+    // CSS hides it again above that width so the controls never appear twice.
+    navEnabled?: boolean;
+    onBack?: () => void;
+    onHome?: () => void;
+    onAppView?: () => void;
     // Quick control toggle states (lifted to parent for persistence)
     screenOff: boolean;
     onScreenOffChange: (value: boolean) => void;
@@ -46,6 +56,10 @@ export function MorePanel({
     onStayAwakeChange,
     darkMode,
     onDarkModeChange,
+    navEnabled = false,
+    onBack,
+    onHome,
+    onAppView,
 }: MorePanelProps) {
     const [selectedApkPaths, setSelectedApkPaths] = useState<string[]>([]);
     const [isDragging, setIsDragging] = useState(false);
@@ -148,15 +162,76 @@ export function MorePanel({
     };
 
     return (
-        <div className="panel-overlay">
+        <div className="panel-overlay" role="dialog" aria-modal="true" aria-label="More options">
             <div className="panel-header">
                 <span className="panel-title">More Options</span>
-                <button className="panel-close-btn" onClick={onClose}>
+                <button
+                    className="panel-close-btn"
+                    onClick={onClose}
+                    aria-label="Close more options"
+                >
                     <X size={14} />
                 </button>
             </div>
 
             <div className="panel-content">
+                {/* Device navigation - only rendered visibly on a narrow sidebar */}
+                <div className="more-nav-fallback">
+                    <div
+                        style={{
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: 'var(--vsc-text-muted)',
+                            marginBottom: 8,
+                        }}
+                    >
+                        Navigation
+                    </div>
+                    <div className="settings-quick-actions">
+                        <button
+                            className="quick-action-btn"
+                            onClick={onBack}
+                            disabled={!navEnabled}
+                            aria-label="Back"
+                        >
+                            <div className="quick-action-icon">
+                                <ChevronLeft size={16} />
+                            </div>
+                            <span className="quick-action-label">Back</span>
+                        </button>
+                        <button
+                            className="quick-action-btn"
+                            onClick={onHome}
+                            disabled={!navEnabled}
+                            aria-label="Home"
+                        >
+                            <div className="quick-action-icon">
+                                <Circle size={14} />
+                            </div>
+                            <span className="quick-action-label">Home</span>
+                        </button>
+                        <button
+                            className="quick-action-btn"
+                            onClick={onAppView}
+                            disabled={!navEnabled}
+                            aria-label="Recent apps"
+                        >
+                            <div className="quick-action-icon">
+                                <Square size={16} />
+                            </div>
+                            <span className="quick-action-label">Recents</span>
+                        </button>
+                    </div>
+
+                    <div
+                        style={{
+                            height: 1,
+                            background: 'var(--vsc-border)',
+                            margin: '16px 0',
+                        }}
+                    />
+                </div>
+
                 {/* APK Installer Section */}
                 <div style={{ marginBottom: 16 }}>
                     <div
