@@ -12,6 +12,15 @@
     0 0 100px rgba(188, 140, 255, 0.05);
 }
 
+/* Scaled by useFitScale so the whole mockup grows or shrinks with the panel
+   instead of sitting at a fixed size. Never let flex resize it: the natural
+   size has to stay measurable for the scale factor to be correct. */
+.phone-frame-fitted {
+  flex: 0 0 auto;
+  transform-origin: center center;
+  will-change: transform;
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-10px); }

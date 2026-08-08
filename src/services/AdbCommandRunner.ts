@@ -123,6 +123,15 @@ export class AdbCommandRunner {
         return this.spawnAdb(['-s', deviceId, ...args], timeoutMs);
     }
 
+    /**
+     * Runs an adb subcommand with no device scope - `devices`, `kill-server`. The
+     * diagnostics that use these have to run when no device is reachable, so there
+     * is no socket to ride and no `-s` to pass: always spawn.
+     */
+    static async host(args: readonly string[], timeoutMs?: number): Promise<AdbCommandResult> {
+        return this.spawnAdb(args, timeoutMs);
+    }
+
     private static findSocket(deviceId: string): AdbSocketHandle | null {
         for (const registration of this.sockets) {
             if (registration.deviceId === deviceId) {

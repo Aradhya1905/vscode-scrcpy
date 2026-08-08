@@ -29,6 +29,7 @@
       "Bash(npm run format:check:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "plansDirectory": ".claude/plans"
   }
 }

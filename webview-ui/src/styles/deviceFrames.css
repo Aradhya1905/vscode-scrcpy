@@ -90,11 +90,13 @@
 
 /* ===== SAMSUNG S20 FRAME ===== */
 /* Aspect ratio: 69.1mm x 151.7mm = 0.4555 */
+/* --phone-height is set per-frame by useFrameFit, so the body follows the panel
+   size. Everything sized from it stays proportional at any height. */
 .samsung-s20-frame {
   position: relative;
   aspect-ratio: 69.1 / 151.7;
   width: calc(var(--phone-height) * 0.4555);
-  border-radius: 10px;
+  border-radius: calc(var(--phone-height) * 0.016);
   padding: 0;
   box-shadow:
     0 25px 50px -12px rgba(0, 0, 0, 0.8),
@@ -107,7 +109,7 @@
   width: 100%;
   height: var(--phone-height);
   background: #000;
-  border-radius: 10px;
+  border-radius: calc(var(--phone-height) * 0.016);
   overflow: hidden;
   border: 3px solid currentColor;
 }
@@ -129,7 +131,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  border-radius: 7px;
+  border-radius: calc(var(--phone-height) * 0.011);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -164,4 +166,32 @@
   border-radius: 1px 0 0 1px;
   z-index: 15;
   opacity: 0.8;
+}
+
+/* ===== SKIN HIDDEN ===== */
+/* The frame stays mounted when the skin is turned off so the video canvas keeps
+   its DOM identity - remounting it would detach the decoder's 2D context and
+   force a stream restart. Collapse it to a transparent full-size box instead. */
+.samsung-s20-frame.skin-hidden {
+  aspect-ratio: auto;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.samsung-s20-frame.skin-hidden .samsung-s20-screen {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.samsung-s20-frame.skin-hidden .samsung-s20-active-screen {
+  border-radius: 0;
+}
+
+.samsung-s20-frame.skin-hidden .samsung-s20-camera-cutout,
+.samsung-s20-frame.skin-hidden .samsung-s20-button-right,
+.samsung-s20-frame.skin-hidden .samsung-s20-button-right-volume {
+  display: none;
 }

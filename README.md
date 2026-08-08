@@ -197,6 +197,26 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type:
 
 ---
 
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `unauthorized` next to your device in `adb devices` | The device has not accepted this computer's debugging key | Unlock the device and tap **Allow** on the "Allow USB debugging" prompt. Tick *Always allow from this computer* to make it stick. |
+| No device listed at all | USB debugging off, a charge-only cable, or a driver issue | Enable **USB debugging** in Developer options, try another cable/port, and re-plug the device. |
+| `adb` not found | Android platform-tools missing from `PATH` | Install platform-tools and make sure `adb` runs in a fresh terminal. |
+| Device listed but mirroring never starts | A stale adb server, or another scrcpy/Android Studio session holding the device | `adb kill-server && adb start-server`, then close any other tool using the device. |
+| Stream drops after a while | The device slept or was unplugged | Wake the device and start mirroring again; **Stay awake** in the More panel keeps it up while charging. |
+
+Useful commands:
+
+```bash
+adb devices -l          # what the adb server can actually see
+adb kill-server         # restart the host daemon
+adb start-server
+```
+
+---
+
 ## Development
 
 ```bash
