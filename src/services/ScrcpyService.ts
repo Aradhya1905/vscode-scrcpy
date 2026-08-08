@@ -31,6 +31,9 @@ export interface ScrcpySettings {
 }
 
 export class ScrcpyService {
+    /** How long the video stream may go quiet before the watchdog reports a stall. */
+    private static readonly VIDEO_STALL_TIMEOUT_MS = 10000;
+
     private adbClient: AdbServerClient | null = null;
     private adb: Adb | null = null;
     private scrcpyClient: AdbScrcpyClient<AdbScrcpyOptions3_3_3<true>> | null = null;
@@ -207,82 +210,66 @@ export class ScrcpyService {
         this.streamAbortController = new AbortController();
         const abortSignal = this.streamAbortController.signal;
 
+        const reader = stream.getReader();
+
+        // The stream is a native WHATWG ReadableStream, so cancel() settles any
+        // in-flight read() with { done: true }. That ends the loop below without
+        // racing a timeout Promise against the read - which is what previously
+        // left an orphaned read pending, swallowing the next packet (a config or
+        // IDR loss froze the picture for a whole GOP).
+        const cancelRead = () => {
+            reader.cancel().catch(() => {
+                // Already closed or errored; nothing to unwind.
+            });
+        };
+
+        // One timer for the whole session, rearmed with refresh() per packet
+        // instead of allocating a Promise + closure + timeout + listener pair
+        // every read. A gap is not an error: with the screen off scrcpy sends
+        // nothing for as long as the display stays static, so the watchdog only
+        // reports the stall and leaves the stream open to resume. setTimeout is
+        // one-shot, so this logs once per gap rather than every interval.
+        const stallTimer = setTimeout(() => {
+            if (this.isRunning) {
+                console.warn(
+                    `No video packets for ${ScrcpyService.VIDEO_STALL_TIMEOUT_MS}ms; stream idle`
+                );
+            }
+        }, ScrcpyService.VIDEO_STALL_TIMEOUT_MS);
+
         try {
-            const reader = stream.getReader();
-            let packetCount = 0;
-
-            // Wrap reader.read() with timeout to prevent infinite hang
-            const readWithTimeout = async (
-                timeoutMs: number = 10000
-            ): Promise<{ done: boolean; value?: ScrcpyMediaStreamPacket }> => {
-                return new Promise((resolve, reject) => {
-                    // Check if already aborted
-                    if (abortSignal.aborted) {
-                        reject(new Error('Stream aborted'));
-                        return;
-                    }
-
-                    const timeoutId = setTimeout(() => {
-                        reject(new Error('Video stream read timeout'));
-                    }, timeoutMs);
-
-                    // Listen for abort signal
-                    const abortHandler = () => {
-                        clearTimeout(timeoutId);
-                        reject(new Error('Stream aborted'));
-                    };
-                    abortSignal.addEventListener('abort', abortHandler, { once: true });
-
-                    reader
-                        .read()
-                        .then((result) => {
-                            clearTimeout(timeoutId);
-                            abortSignal.removeEventListener('abort', abortHandler);
-                            resolve(result);
-                        })
-                        .catch((err) => {
-                            clearTimeout(timeoutId);
-                            abortSignal.removeEventListener('abort', abortHandler);
-                            reject(err);
-                        });
-                });
-            };
+            if (abortSignal.aborted) {
+                cancelRead();
+            } else {
+                abortSignal.addEventListener('abort', cancelRead, { once: true });
+            }
 
             while (this.isRunning) {
-                try {
-                    const { done, value } = await readWithTimeout(10000); // 10 second timeout
-                    if (done || !value) {
-                        break;
-                    }
+                const { done, value } = await reader.read();
+                if (done || !value) {
+                    break;
+                }
 
-                    packetCount++;
+                stallTimer.refresh();
 
-                    // Send video data to webview. The packet type and keyframe flag
-                    // travel with it so the forwarder knows where a dropped stream
-                    // may safely resume.
-                    if (value.data) {
-                        this.events.onVideoData({
-                            data: Buffer.from(value.data),
-                            isConfiguration: value.type === 'configuration',
-                            isKeyframe: value.type === 'data' && value.keyframe === true,
-                        });
-                    }
-                } catch (readError) {
-                    if (readError instanceof Error) {
-                        // On abort, exit the loop
-                        if (readError.message.includes('aborted')) {
-                            console.warn('Video stream aborted');
-                            break;
-                        }
-                        // On timeout, just continue - device might be idle
-                        if (readError.message.includes('timeout')) {
-                            // Don't log every timeout to avoid spam
-                            continue;
-                        }
-                    }
-                    throw readError;
+                // Send video data to webview. The packet type and keyframe flag
+                // travel with it so the forwarder knows where a dropped stream
+                // may safely resume.
+                if (value.data) {
+                    this.events.onVideoData({
+                        data: Buffer.from(value.data),
+                        isConfiguration: value.type === 'configuration',
+                        isKeyframe: value.type === 'data' && value.keyframe === true,
+                    });
                 }
             }
+        } catch (error) {
+            if (this.isRunning) {
+                console.error('Error processing video stream:', error);
+            }
+        } finally {
+            clearTimeout(stallTimer);
+            abortSignal.removeEventListener('abort', cancelRead);
 
             // Release the reader lock
             try {
@@ -290,11 +277,7 @@ export class ScrcpyService {
             } catch {
                 // Ignore if already released
             }
-        } catch (error) {
-            if (this.isRunning) {
-                console.error('Error processing video stream:', error);
-            }
-        } finally {
+
             this.streamAbortController = null;
         }
     }
