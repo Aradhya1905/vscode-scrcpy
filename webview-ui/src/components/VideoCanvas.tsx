@@ -26,6 +26,12 @@ interface VideoCanvasProps {
     onPasteText?: (text: string) => void;
     invalidateCacheKey?: number;
     touchEnabled?: boolean;
+    /** Ctrl (or Ctrl+Shift) + wheel: 1 = zoom in, -1 = zoom out */
+    onZoomWheel?: (direction: 1 | -1, clientX: number, clientY: number) => void;
+    /** Middle-mouse drag delta, in viewport pixels */
+    onPan?: (deltaX: number, deltaY: number) => void;
+    /** Fired when a middle-drag pan starts/ends, so the parent can update the cursor */
+    onPanStateChange?: (isPanning: boolean) => void;
 }
 
 // Minimum interval between touch move events (ms)
@@ -42,10 +48,17 @@ export const VideoCanvas = memo(function VideoCanvas({
     onPasteText,
     invalidateCacheKey,
     touchEnabled = true,
+    onZoomWheel,
+    onPan,
+    onPanStateChange,
 }: VideoCanvasProps) {
     const internalCanvasRef = useRef<HTMLCanvasElement>(null);
     const isPointerDownRef = useRef(false);
     const lastPointerPosRef = useRef({ x: 0, y: 0 });
+
+    // Middle-mouse drag panning (only relevant while zoomed in)
+    const isPanningRef = useRef(false);
+    const lastPanPosRef = useRef({ x: 0, y: 0 });
 
     // Performance optimization: cache bounding rect to avoid layout thrashing
     const cachedRectRef = useRef<DOMRect | null>(null);
@@ -278,9 +291,42 @@ export const VideoCanvas = memo(function VideoCanvas({
         };
     }, []);
 
+    // End an in-progress pan drag. Returns true if a pan was actually active.
+    const endPan = useCallback(
+        (pointerId?: number) => {
+            if (!isPanningRef.current) return false;
+
+            isPanningRef.current = false;
+            if (pointerId !== undefined) {
+                try {
+                    internalCanvasRef.current?.releasePointerCapture(pointerId);
+                } catch {
+                    // Capture may already have been released by the browser
+                }
+            }
+            onPanStateChange?.(false);
+            return true;
+        },
+        [onPanStateChange]
+    );
+
     const handlePointerDown = useCallback(
         (event: React.PointerEvent) => {
-            if (!isConnected || !touchEnabled) return;
+            if (!isConnected) return;
+
+            // Middle button pans the zoomed view instead of touching the device
+            if (event.button === 1) {
+                if (!onPan) return;
+                event.preventDefault();
+                isPanningRef.current = true;
+                lastPanPosRef.current = { x: event.clientX, y: event.clientY };
+                internalCanvasRef.current?.setPointerCapture(event.pointerId);
+                onPanStateChange?.(true);
+                return;
+            }
+
+            // Only the primary button generates device touch events
+            if (event.button !== 0 || !touchEnabled) return;
 
             event.preventDefault();
             isPointerDownRef.current = true;
@@ -304,11 +350,21 @@ export const VideoCanvas = memo(function VideoCanvas({
 
             sendTouchEvent('down', deviceCoords.x, deviceCoords.y);
         },
-        [isConnected, touchEnabled, getDeviceCoordinates, sendTouchEvent]
+        [isConnected, touchEnabled, getDeviceCoordinates, sendTouchEvent, onPan, onPanStateChange]
     );
 
     const handlePointerMove = useCallback(
         (event: React.PointerEvent) => {
+            // Pan drag takes priority and is independent of the touch pipeline
+            if (isPanningRef.current) {
+                event.preventDefault();
+                const deltaX = event.clientX - lastPanPosRef.current.x;
+                const deltaY = event.clientY - lastPanPosRef.current.y;
+                lastPanPosRef.current = { x: event.clientX, y: event.clientY };
+                onPan?.(deltaX, deltaY);
+                return;
+            }
+
             if (!isConnected || !touchEnabled || !isPointerDownRef.current) return;
 
             event.preventDefault();
@@ -354,11 +410,14 @@ export const VideoCanvas = memo(function VideoCanvas({
             getCachedRect,
             sendTouchEvent,
             flushPendingMove,
+            onPan,
         ]
     );
 
     const handlePointerUp = useCallback(
         (event: React.PointerEvent) => {
+            if (endPan(event.pointerId)) return;
+
             if (!isConnected || !touchEnabled || !isPointerDownRef.current) return;
 
             event.preventDefault();
@@ -376,10 +435,12 @@ export const VideoCanvas = memo(function VideoCanvas({
 
             sendTouchEvent('up', finalPos.x, finalPos.y);
         },
-        [isConnected, touchEnabled, sendTouchEvent]
+        [isConnected, touchEnabled, sendTouchEvent, endPan]
     );
 
     const handlePointerLeave = useCallback(() => {
+        if (endPan()) return;
+
         if (!isConnected || !touchEnabled || !isPointerDownRef.current) return;
 
         isPointerDownRef.current = false;
@@ -394,13 +455,22 @@ export const VideoCanvas = memo(function VideoCanvas({
         pendingMoveRef.current = null;
 
         sendTouchEvent('up', finalPos.x, finalPos.y);
-    }, [isConnected, touchEnabled, sendTouchEvent]);
+    }, [isConnected, touchEnabled, sendTouchEvent, endPan]);
 
     const handleWheel = useCallback(
         (event: React.WheelEvent) => {
             if (!isConnected) return;
 
             event.preventDefault();
+
+            // Ctrl (or Ctrl+Shift) + wheel zooms the view instead of scrolling the
+            // device. preventDefault above also suppresses the host's page zoom.
+            if (event.ctrlKey && onZoomWheel) {
+                if (event.deltaY !== 0) {
+                    onZoomWheel(event.deltaY < 0 ? 1 : -1, event.clientX, event.clientY);
+                }
+                return;
+            }
 
             const canvasRect = getCachedRect();
             if (!canvasRect) return;
@@ -429,7 +499,7 @@ export const VideoCanvas = memo(function VideoCanvas({
                 videoSize.height
             );
         },
-        [isConnected, getCachedRect, getDeviceCoordinates, getVideoSize, onScrollEvent]
+        [isConnected, getCachedRect, getDeviceCoordinates, getVideoSize, onScrollEvent, onZoomWheel]
     );
 
     // Attach wheel event listener with {passive: false} to allow preventDefault
@@ -446,6 +516,13 @@ export const VideoCanvas = memo(function VideoCanvas({
             canvas.removeEventListener('wheel', wheelHandler);
         };
     }, [handleWheel]);
+
+    // Suppress the browser's middle-click autoscroll so it can't fight the pan drag
+    const handleAuxClick = useCallback((event: React.MouseEvent) => {
+        if (event.button === 1) {
+            event.preventDefault();
+        }
+    }, []);
 
     // Handle paste events (Ctrl+V)
     const handlePaste = useCallback(
@@ -476,7 +553,9 @@ export const VideoCanvas = memo(function VideoCanvas({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             onPointerLeave={handlePointerLeave}
+            onAuxClick={handleAuxClick}
             onKeyDown={handleKeyDown}
             onKeyUp={handleKeyUp}
             onPaste={handlePaste}

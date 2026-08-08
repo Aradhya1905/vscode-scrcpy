@@ -1,0 +1,103 @@
+/* ===== ZOOM HUD (browser-style floating zoom pill) ===== */
+.zoom-hud {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 14px;
+  background: rgba(22, 27, 34, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--vsc-border);
+  border-radius: 999px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  z-index: 30;
+
+  /* Hidden state - fades down/out and stops intercepting pointer events */
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-8px);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+
+.zoom-hud.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.zoom-hud-level {
+  min-width: 42px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--vsc-text);
+  text-align: center;
+  user-select: none;
+}
+
+.zoom-hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.zoom-hud-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.zoom-hud-reset {
+  padding: 4px 14px;
+  background: transparent;
+  border: 1px solid var(--vsc-blue);
+  border-radius: 999px;
+  color: var(--vsc-blue);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.zoom-hud-reset:hover:not(:disabled) {
+  background: rgba(88, 166, 255, 0.15);
+}
+
+.zoom-hud-reset:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.zoom-hud-reset:disabled {
+  border-color: var(--vsc-border);
+  color: var(--vsc-text-muted);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Narrow sidebars: drop the label width and tighten padding so the pill still fits */
+@media (max-width: 260px) {
+  .zoom-hud {
+    padding: 4px 5px 4px 10px;
+    gap: 4px;
+  }
+
+  .zoom-hud-level {
+    min-width: 36px;
+    font-size: 11px;
+  }
+
+  .zoom-hud-reset {
+    padding: 3px 10px;
+    font-size: 11px;
+  }
+}

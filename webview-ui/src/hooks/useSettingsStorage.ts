@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { vscode } from '../vscode';
+import { DEFAULT_ZOOM, clampZoom } from './useZoom';
 
 interface AppSettings {
     gradientColor1?: string;
@@ -15,6 +16,7 @@ interface AppSettings {
     fps?: string;
     bitrate?: string;
     cursorStyle?: 'crosshair' | 'default';
+    zoom?: number;
     persistentMirroring?: boolean;
 }
 
@@ -32,6 +34,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     fps: '60',
     bitrate: '8',
     cursorStyle: 'crosshair',
+    zoom: DEFAULT_ZOOM,
     persistentMirroring: false,
 };
 
@@ -67,6 +70,9 @@ export function useSettingsStorage() {
                 if (isNaN(bitrateNum) || bitrateNum <= 0) {
                     migratedSettings.bitrate = '8';
                 }
+
+                // Validate zoom (must be within the supported zoom range)
+                migratedSettings.zoom = clampZoom(migratedSettings.zoom ?? DEFAULT_ZOOM);
 
                 setSettings(migratedSettings);
 

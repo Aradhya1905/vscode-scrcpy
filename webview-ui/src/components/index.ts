@@ -9,3 +9,4 @@ export { DeviceSelector } from './DeviceSelector';
 export { RecentApps } from './RecentApps';
 export { AppLauncher } from './AppLauncher';
 export { Tooltip } from './Tooltip';
+export { ZoomHud } from './ZoomHud';

@@ -21,7 +21,8 @@
   background: rgba(0, 0, 0, 1.0) !important;
 }
 
-.video-container.no-device-skin > .mirror-stage {
+/* Descendant (not direct child) so the .zoom-content wrapper doesn't break this */
+.video-container.no-device-skin .mirror-stage {
   width: 100%;
   height: 100%;
   position: relative;
@@ -38,6 +39,32 @@
   position: relative;
   width: 100%;
   height: 100%;
+}
+
+/* ===== ZOOM WRAPPER ===== */
+/* Scaled/panned by the zoom feature. The container clips it (overflow: hidden). */
+.zoom-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+  transition: transform 0.12s ease-out;
+}
+
+.video-container.no-device-skin .zoom-content {
+  width: 100%;
+  height: 100%;
+}
+
+/* Dragging must feel 1:1, so no easing while panning */
+.video-container.panning .zoom-content {
+  transition: none;
+}
+
+.video-container.panning,
+.video-container.panning .video-canvas {
+  cursor: grabbing;
 }
 
 /* ===== ACTIVE SCREEN (Video Canvas) ===== */
