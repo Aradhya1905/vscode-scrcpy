@@ -166,6 +166,9 @@ export type WebviewMessage =
     // the SPS+PPS it needs. Without this it would wait for the encoder's next
     // scheduled keyframe, which is seconds away.
     | { command: 'video-request-keyframe' }
+    // The decode queue is running deep, or shallow again. Only the webview can see
+    // this; while saturated the extension forwards keyframes and nothing else.
+    | { command: 'video-backpressure'; saturated: boolean }
     | { command: 'get-device-info' }
     | { command: 'get-device-list' }
     | { command: 'select-device'; deviceId: string }

@@ -204,6 +204,9 @@ export class ScrcpySidebarView {
                     case 'video-request-keyframe':
                         this._scrcpyService?.requestKeyFrame();
                         break;
+                    case 'video-backpressure':
+                        this._videoForwarder.setSaturated(message.saturated === true);
+                        break;
                     case 'ready':
                         // Send initial device list
                         await this._deviceManager?.refreshDeviceList();

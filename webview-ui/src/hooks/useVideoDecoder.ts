@@ -4,6 +4,11 @@ interface UseVideoDecoderOptions {
     onLog: (message: string, level?: 'info' | 'warn' | 'error') => void;
     /** Asks the device for an IDR. Must be stable. */
     onRequestKeyFrame: () => void;
+    /**
+     * Reports that this webview can no longer keep up with the stream, or that it
+     * can again. Called only on a change, never per frame. Must be stable.
+     */
+    onBackpressureChange: (saturated: boolean) => void;
 }
 
 /** NAL unit type carrying the sequence parameter set. */
@@ -24,6 +29,34 @@ const ACCELERATION_CANDIDATES: (HardwareAcceleration | null)[] = [
     'no-preference',
     null,
 ];
+
+/**
+ * Backpressure thresholds for the upstream signal.
+ *
+ * Two independent entry conditions, because either failure mode can occur alone:
+ * a queue that keeps growing past MAX_DECODE_QUEUE_SIZE (only keyframes can push
+ * it there, since deltas are dropped above that), and a long unbroken run of
+ * locally dropped deltas, which pins the queue just under the drop threshold and
+ * would otherwise never trip a depth test. The run length is deliberately long
+ * (~0.5 s at 60 fps) so a momentary hiccup cannot degrade the picture.
+ */
+const BACKPRESSURE_ENTER_QUEUE = 6;
+const BACKPRESSURE_ENTER_FRAMES = 2;
+const BACKPRESSURE_ENTER_DROP_RUN = 30;
+
+/** Queue depth, and how many consecutive samples at it, before declaring recovery. */
+const BACKPRESSURE_LEAVE_QUEUE = 2;
+const BACKPRESSURE_LEAVE_SAMPLES = 5;
+
+/** Minimum spacing between posts, so the signal itself cannot flood the channel. */
+const BACKPRESSURE_MIN_INTERVAL_MS = 250;
+
+/**
+ * Sampling interval while saturated. Arriving frames cannot drive the recovery
+ * test: the extension is down to keyframes by then, so the queue would be sampled
+ * about once a second.
+ */
+const BACKPRESSURE_POLL_MS = 100;
 
 type DecoderConfigState = 'idle' | 'configuring' | 'ready' | 'failed';
 
@@ -99,7 +132,11 @@ function findNal(data: Uint8Array, nalType: number): Uint8Array | null {
     return start >= 0 ? data.subarray(start) : null;
 }
 
-export function useVideoDecoder({ onLog, onRequestKeyFrame }: UseVideoDecoderOptions) {
+export function useVideoDecoder({
+    onLog,
+    onRequestKeyFrame,
+    onBackpressureChange,
+}: UseVideoDecoderOptions) {
     const decoderRef = useRef<VideoDecoder | null>(null);
     /** Last SPS+PPS blob seen, kept so the decoder can be rebuilt without one inline. */
     const configRef = useRef<Uint8Array | null>(null);
@@ -125,6 +162,14 @@ export function useVideoDecoder({ onLog, onRequestKeyFrame }: UseVideoDecoderOpt
     // Frame skipping metrics for backpressure handling
     const droppedFramesRef = useRef(0);
     const lastDropLogTimeRef = useRef(0);
+
+    /** Upstream backpressure state, and the evidence counters behind each transition. */
+    const saturatedRef = useRef(false);
+    const deepQueueRunRef = useRef(0);
+    const localDropRunRef = useRef(0);
+    const shallowQueueRunRef = useRef(0);
+    const lastSignalTimeRef = useRef(0);
+    const pollTimerRef = useRef<number | null>(null);
 
     // Logged at most once per session, so a wire-format mismatch is visible
     // without flooding the console at frame rate.
@@ -227,8 +272,23 @@ export function useVideoDecoder({ onLog, onRequestKeyFrame }: UseVideoDecoderOpt
         pendingFrameRef.current = null;
     }, []);
 
-    // Unmount must not leave a frame open; the decoder is closed by reset().
-    useEffect(() => clearPendingFrame, [clearPendingFrame]);
+    /** Stops the recovery poll. Safe to call when none is running. */
+    const stopBackpressurePoll = useCallback(() => {
+        if (pollTimerRef.current !== null) {
+            clearTimeout(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+    }, []);
+
+    // Unmount must not leave a frame open or a timer running; the decoder is closed
+    // by reset().
+    useEffect(
+        () => () => {
+            clearPendingFrame();
+            stopBackpressurePoll();
+        },
+        [clearPendingFrame, stopBackpressurePoll]
+    );
 
     const createDecoder = useCallback(() => {
         if (typeof VideoDecoder === 'undefined') {
@@ -445,13 +505,106 @@ export function useVideoDecoder({ onLog, onRequestKeyFrame }: UseVideoDecoderOpt
         [configureDecoder]
     );
 
+    /** Posts one transition and clears the evidence behind it. */
+    const signalBackpressure = useCallback(
+        (saturated: boolean) => {
+            saturatedRef.current = saturated;
+            lastSignalTimeRef.current = performance.now();
+            deepQueueRunRef.current = 0;
+            localDropRunRef.current = 0;
+            shallowQueueRunRef.current = 0;
+
+            onLog(
+                saturated
+                    ? 'Decoder saturated; asking the extension for keyframes only'
+                    : 'Decoder caught up; asking the extension for the full stream',
+                saturated ? 'warn' : 'info'
+            );
+            onBackpressureChange(saturated);
+        },
+        [onBackpressureChange, onLog]
+    );
+
+    /**
+     * Samples the queue while saturated and clears the signal once it has stayed
+     * shallow long enough to trust. Self-terminating: the last tick either posts
+     * the recovery or schedules the next one.
+     */
+    const startBackpressurePoll = useCallback(() => {
+        if (pollTimerRef.current !== null) {
+            return;
+        }
+
+        const poll = (): void => {
+            pollTimerRef.current = null;
+            if (!saturatedRef.current) {
+                return;
+            }
+
+            const queueSize = decoderRef.current?.decodeQueueSize ?? 0;
+            shallowQueueRunRef.current =
+                queueSize <= BACKPRESSURE_LEAVE_QUEUE ? shallowQueueRunRef.current + 1 : 0;
+
+            if (
+                shallowQueueRunRef.current >= BACKPRESSURE_LEAVE_SAMPLES &&
+                performance.now() - lastSignalTimeRef.current >= BACKPRESSURE_MIN_INTERVAL_MS
+            ) {
+                signalBackpressure(false);
+                return;
+            }
+
+            pollTimerRef.current = window.setTimeout(poll, BACKPRESSURE_POLL_MS);
+        };
+
+        pollTimerRef.current = window.setTimeout(poll, BACKPRESSURE_POLL_MS);
+    }, [signalBackpressure]);
+
+    /**
+     * Decides whether this webview has fallen behind far enough that the extension
+     * should stop sending it delta frames at all.
+     *
+     * Dropping locally already saves the decode, but the frame still cost a host
+     * copy, a postMessage and a structured clone by the time it gets here. The
+     * signal is what removes that cost.
+     */
+    const noteQueueDepth = useCallback(
+        (queueSize: number, droppedLocally: boolean) => {
+            if (saturatedRef.current) {
+                // Recovery is the poll's call: while saturated, the only frames that
+                // arrive are keyframes, far too sparse to sample on.
+                return;
+            }
+
+            deepQueueRunRef.current =
+                queueSize > BACKPRESSURE_ENTER_QUEUE ? deepQueueRunRef.current + 1 : 0;
+            localDropRunRef.current = droppedLocally ? localDropRunRef.current + 1 : 0;
+
+            const saturated =
+                deepQueueRunRef.current >= BACKPRESSURE_ENTER_FRAMES ||
+                localDropRunRef.current >= BACKPRESSURE_ENTER_DROP_RUN;
+            if (
+                !saturated ||
+                performance.now() - lastSignalTimeRef.current < BACKPRESSURE_MIN_INTERVAL_MS
+            ) {
+                return;
+            }
+
+            signalBackpressure(true);
+            startBackpressurePoll();
+        },
+        [signalBackpressure, startBackpressurePoll]
+    );
+
     const processVideoPacket = useCallback(
         (payload: ArrayBuffer | ArrayBufferView, keyframe: boolean, pts: number) => {
             // Backpressure first. With `keyframe` arriving as a message field this is
             // a field read; the old code paid a base64 decode and a full NAL scan
             // before it could make the same decision.
             const queueSize = decoderRef.current?.decodeQueueSize ?? 0;
-            if (!keyframe && queueSize > MAX_DECODE_QUEUE_SIZE) {
+            const droppedLocally = !keyframe && queueSize > MAX_DECODE_QUEUE_SIZE;
+            noteQueueDepth(queueSize, droppedLocally);
+
+            if (droppedLocally) {
                 droppedFramesRef.current++;
 
                 // Log dropped frames periodically (at most once per second)
@@ -496,7 +649,7 @@ export function useVideoDecoder({ onLog, onRequestKeyFrame }: UseVideoDecoderOpt
                 onLog(`Decode error: ${(e as Error).message}`, 'error');
             }
         },
-        [onLog, readyDecoder, toBytes]
+        [noteQueueDepth, onLog, readyDecoder, toBytes]
     );
 
     const reset = useCallback(() => {

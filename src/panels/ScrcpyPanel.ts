@@ -130,7 +130,10 @@ export class ScrcpyPanel {
                     }
                 } else {
                     this._deviceInfoService?.pausePolling();
-                    this._videoForwarder.reset();
+                    // Deliberately not reset(): that drops the cached SPS+PPS, and
+                    // this stream sends them exactly once, so the keyframe on reveal
+                    // would arrive unconfigurable and the canvas would stay black.
+                    // isDeliverable() already opens the gap for every hidden packet.
                 }
             },
             null,
@@ -148,6 +151,9 @@ export class ScrcpyPanel {
                         break;
                     case 'video-request-keyframe':
                         this._scrcpyService?.requestKeyFrame();
+                        break;
+                    case 'video-backpressure':
+                        this._videoForwarder.setSaturated(message.saturated === true);
                         break;
                     case 'ready':
                         // Send initial device list

@@ -59,10 +59,16 @@ export default function MirrorApp() {
         postMessageRef.current?.({ command: 'video-request-keyframe' });
     }, []);
 
+    // Stable for the same reason: the decoder holds it across configurations.
+    const reportBackpressure = useCallback((saturated: boolean) => {
+        postMessageRef.current?.({ command: 'video-backpressure', saturated });
+    }, []);
+
     const { setCanvas, processVideoConfig, processVideoPacket, reset, getVideoSize } =
         useVideoDecoder({
             onLog: addLog,
             onRequestKeyFrame: requestKeyFrame,
+            onBackpressureChange: reportBackpressure,
         });
 
     const handleMessage = useCallback(

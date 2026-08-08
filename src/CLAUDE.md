@@ -319,6 +319,12 @@ webview can configure or recover from any one of them. One invariant governs eve
 gap (hidden surface, saturation, resync): nothing is forwarded until a keyframe
 arrives.
 
+Saturation is the one gap the host cannot detect itself - only the webview sees its
+decode queue - so it arrives as `{ command: 'video-backpressure', saturated }` and
+maps to `setSaturated()`. While saturated the gap never closes: keyframes pass,
+everything between them is dropped, which keeps a picture on screen and keeps the
+webview receiving enough traffic to report recovery.
+
 See [services/VideoFrameForwarder.ts](services/VideoFrameForwarder.ts)
 
 ### Visibility Handling

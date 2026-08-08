@@ -86,14 +86,15 @@ export class VideoFrameForwarder {
             return;
         }
 
-        if (this.saturated) {
-            this.stats.droppedSaturated++;
-            this.dropAndResync();
-            return;
-        }
-
-        if (this.dropUntilKeyframe) {
+        // One gate for both gap states. While saturated it never reopens: keyframes
+        // pass, everything between them is dropped, so the webview keeps a picture
+        // (and the traffic it needs to notice it has caught up) at a fraction of the
+        // encode and IPC cost.
+        if (this.saturated || this.dropUntilKeyframe) {
             if (!this.isResumePoint(packet)) {
+                if (this.saturated) {
+                    this.stats.droppedSaturated++;
+                }
                 return;
             }
             this.dropUntilKeyframe = false;
@@ -109,8 +110,13 @@ export class VideoFrameForwarder {
     };
 
     /**
-     * Backpressure signal from the webview. While saturated, packets are dropped
-     * and the stream resumes on the next keyframe.
+     * Backpressure signal from the webview, which sends it when its decode queue
+     * stays deep - the webview is the only side that can see that, since the host
+     * has no view of decode cost.
+     *
+     * Entering resyncs once so the webview starts the degraded stream from a clean
+     * keyframe; leaving needs nothing, because the very next delta frame is
+     * forwarded again.
      */
     setSaturated(saturated: boolean): void {
         if (saturated === this.saturated) {

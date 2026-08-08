@@ -430,7 +430,20 @@ if (!keyframe && (decoderRef.current?.decodeQueueSize ?? 0) > MAX_DECODE_QUEUE_S
     return; // Drop this non-keyframe
 }
 ```
-See [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
+
+A local drop still paid for a host copy, a `postMessage` and a structured clone, so
+sustained saturation is also reported upstream - once per transition, never per
+frame:
+
+```typescript
+vscode.postMessage({ command: 'video-backpressure', saturated: true });
+```
+
+Entry needs real evidence (a queue over 6 on two consecutive frames, **or** ~30
+consecutive locally dropped deltas - the case where the queue pins just under the
+drop threshold and no depth test would ever fire). While saturated the extension
+forwards keyframes only, so recovery is detected by polling `decodeQueueSize`
+rather than by arriving frames. See [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
 
 ### Cleanup on Unmount
 
