@@ -1,0 +1,205 @@
+/* ===================================================================
+   DESIGN TOKENS
+   -------------------------------------------------------------------
+   Single source of truth for colour, typography, radius, elevation and
+   motion. Every token resolves against a --vscode-* variable that the
+   host injects into the webview, with a hardcoded fallback so the UI
+   still renders correctly outside a webview (the Vite dev server) or on
+   a theme that omits an optional colour.
+
+   Because VS Code updates the --vscode-* variables live, the whole UI
+   follows the user's theme without any JavaScript.
+
+   See docs/changes/02-design-tokens.md
+   =================================================================== */
+
+:root {
+  /* ===== TYPOGRAPHY =====
+     Sourced from the editor rather than a bundled or remote font. The
+     webview CSP has no font-src / no remote host, so a @import of a web
+     font is blocked outright - see docs/changes/01-webview-fonts.md */
+  --font-ui: var(
+    --vscode-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif
+  );
+  --font-mono: var(
+    --vscode-editor-font-family,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    monospace
+  );
+
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-base: 12px;
+  --text-md: 13px;
+  --text-lg: 15px;
+
+  /* ===== SURFACES =====
+     sunken < base < raised < overlay, in increasing visual elevation */
+  --surface-sunken: var(--vscode-input-background, #0a0e14);
+  --surface: var(--vscode-sideBar-background, #0d1117);
+  --surface-raised: var(--vscode-editorWidget-background, #161b22);
+  --surface-overlay: var(--vscode-menu-background, var(--vscode-editorWidget-background, #1c2128));
+
+  /* Interactive fills */
+  --surface-hover: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
+  --surface-active: var(--vscode-list-activeSelectionBackground, rgba(255, 255, 255, 0.1));
+
+  /* ===== TEXT ===== */
+  --text: var(--vscode-foreground, #e6edf3);
+  --text-muted: var(--vscode-descriptionForeground, #8b949e);
+  --text-subtle: var(--vscode-disabledForeground, #6e7681);
+  --text-on-accent: var(--vscode-button-foreground, #ffffff);
+
+  /* ===== LINES ===== */
+  --border: var(--vscode-widget-border, var(--vscode-panel-border, #30363d));
+  --border-strong: var(--vscode-contrastBorder, var(--vscode-panel-border, #484f58));
+
+  /* ===== ACCENT & STATUS ===== */
+  --accent: var(--vscode-textLink-foreground, var(--vscode-focusBorder, #58a6ff));
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --focus-ring: var(--vscode-focusBorder, #58a6ff);
+
+  --success: var(--vscode-charts-green, #3fb950);
+  --danger: var(--vscode-charts-red, var(--vscode-errorForeground, #f85149));
+  --warning: var(--vscode-charts-yellow, #d29922);
+  --info: var(--vscode-charts-blue, #58a6ff);
+  --purple: var(--vscode-charts-purple, #bc8cff);
+
+  /* ===== RADII ===== */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* ===== ELEVATION =====
+     --highlight-inset is the 1px top light line that makes a surface read
+     as a raised object rather than a coloured rectangle. It only works on
+     dark backgrounds, so the light theme overrides it to `none` below. */
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.28), var(--highlight-inset);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.35), var(--highlight-inset);
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.45), var(--highlight-inset);
+
+  /* ===== MOTION =====
+     Only transform / opacity / colour should be transitioned. Anything
+     that affects layout forces a reflow on every frame. */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ===== LAYOUT (not theme-dependent) ===== */
+  --phone-width: 290px;
+  --phone-height: 630px;
+}
+
+/* Light themes: the dark-surface shadow recipe reads as dirt. Soften the
+   shadows and drop the top highlight entirely. VS Code sets these classes
+   on <body>, and custom properties inherit, so descendants pick them up. */
+body.vscode-light {
+  --highlight-inset: 0 0 rgba(0, 0, 0, 0);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+/* High contrast themes draw structure with borders, not elevation. */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  --highlight-inset: 0 0 rgba(0, 0, 0, 0);
+  --shadow-1: none;
+  --shadow-2: none;
+  --shadow-3: none;
+  --border: var(--vscode-contrastBorder, #6fc3df);
+  --border-strong: var(--vscode-contrastBorder, #6fc3df);
+}
+
+/* ===================================================================
+   LEGACY ALIASES
+   -------------------------------------------------------------------
+   The existing stylesheets reference --vsc-* in several hundred places.
+   Aliasing them onto the tokens makes the whole UI theme-aware in one
+   edit instead of a risky mass find-and-replace. New work should use the
+   semantic names above; these can be retired file by file.
+   =================================================================== */
+:root {
+  --vsc-bg: var(--surface);
+  --vsc-secondary: var(--surface-raised);
+  --vsc-tertiary: var(--surface-overlay);
+  --vsc-border: var(--border);
+  --vsc-text: var(--text);
+  --vsc-text-muted: var(--text-muted);
+
+  --vsc-blue: var(--info);
+  --vsc-green: var(--success);
+  --vsc-red: var(--danger);
+  --vsc-purple: var(--purple);
+  --vsc-yellow: var(--warning);
+}
+
+/* ===================================================================
+   TEMPORARY: dark-locked panels
+   -------------------------------------------------------------------
+   The logcat, file manager and shell/logs panels still hardcode dozens
+   of dark hex values for their own text and chrome (see the counts in
+   docs/changes/backlog.md). Letting their *backgrounds* follow a light
+   theme while their *foregrounds* stay hardcoded would make them
+   unreadable, so they are pinned to the dark fallbacks until each one
+   has been migrated onto the tokens above.
+
+   Removing a block here is the last step of migrating that panel.
+   =================================================================== */
+.logcat-root,
+.fm-root,
+.sl-root {
+  --surface-sunken: #0a0e14;
+  --surface: #0d1117;
+  --surface-raised: #161b22;
+  --surface-overlay: #1c2128;
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-active: rgba(255, 255, 255, 0.1);
+
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-subtle: #6e7681;
+
+  --border: #30363d;
+  --border-strong: #484f58;
+
+  --accent: #58a6ff;
+  --success: #3fb950;
+  --danger: #f85149;
+  --warning: #d29922;
+  --info: #58a6ff;
+  --purple: #bc8cff;
+
+  --highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  color: var(--text);
+}
+
+/* ===== REDUCED MOTION =====
+   Honour the OS setting. Durations collapse rather than going to 0 so
+   that transitionend / animationend listeners still fire. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

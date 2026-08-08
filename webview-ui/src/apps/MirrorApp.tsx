@@ -314,6 +314,66 @@ export default function MirrorApp() {
         [postMessage]
     );
 
+    // Toolbar is wrapped in memo(), so every one of its callback props has to be
+    // referentially stable or the memo boundary is defeated and the toolbar -
+    // along with SettingsPanel/MorePanel behind it - reconciles on every render
+    // of this component, including every frame of a pan drag.
+    // See docs/changes/03-pan-rerender-perf.md
+    const handleShowDeviceSkinChange = useCallback(
+        (value: boolean) => updateSetting('showDeviceSkin', value),
+        [updateSetting]
+    );
+
+    const handleGradientColor1Change = useCallback(
+        (color1: string) => updateSetting('gradientColor1', color1),
+        [updateSetting]
+    );
+
+    const handleGradientColor2Change = useCallback(
+        (color2: string) => updateSetting('gradientColor2', color2),
+        [updateSetting]
+    );
+
+    const handleDeviceSkinColorChange = useCallback(
+        (color: string) => updateSetting('deviceSkinColor', color),
+        [updateSetting]
+    );
+
+    const handleTouchFeedbackChange = useCallback(
+        (enabled: boolean) => updateSetting('touchFeedback', enabled),
+        [updateSetting]
+    );
+
+    const handleQualityChange = useCallback(
+        (value: string) => updateSetting('quality', value),
+        [updateSetting]
+    );
+
+    const handleFpsChange = useCallback(
+        (value: string) => updateSetting('fps', value),
+        [updateSetting]
+    );
+
+    const handleBitrateChange = useCallback(
+        (value: string) => updateSetting('bitrate', value),
+        [updateSetting]
+    );
+
+    const handleCursorStyleChange = useCallback(
+        (value: 'crosshair' | 'default') => updateSetting('cursorStyle', value),
+        [updateSetting]
+    );
+
+    const handlePersistentMirroringChange = useCallback(
+        (enabled: boolean) => updateSetting('persistentMirroring', enabled),
+        [updateSetting]
+    );
+
+    const handleResetSettings = useCallback(() => {
+        resetSettings();
+        resetZoom();
+    }, [resetSettings, resetZoom]);
+
     // Track previous device skin state to avoid restart on mount
     const prevDeviceSkinRef = useRef(showDeviceSkin);
 
@@ -340,13 +400,22 @@ export default function MirrorApp() {
     }, [showDeviceSkin]);
 
     // Invalidate the canvas rect cache when the rendered geometry changes.
-    // A CSS transform doesn't trigger the canvas ResizeObserver, so zoom/pan must
+    // A CSS transform doesn't trigger the canvas ResizeObserver, so zoom must
     // invalidate explicitly or touch coordinates would use a stale rect.
+    //
     // NOTE: this must NOT be the remount `key` - remounting mid-pan would tear
     // down the canvas the decoder is drawing into.
+    //
+    // panX/panY are deliberately NOT dependencies. They change on every
+    // pointermove of a pan drag, and bumping state at that rate re-renders this
+    // whole tree while the decoder is drawing. Pan doesn't need the
+    // invalidation anyway: panning is bound to the middle mouse button and
+    // sends no touch events, VideoCanvas re-reads the rect unconditionally on
+    // every primary-button pointerdown, and its cached rect expires after
+    // 100ms regardless. See docs/changes/03-pan-rerender-perf.md
     useEffect(() => {
         setCanvasCacheKey((prev) => prev + 1);
-    }, [showDeviceSkin, zoom, panX, panY]);
+    }, [showDeviceSkin, zoom]);
 
     // Surface the zoom HUD briefly once the stream comes up, so it's discoverable
     useEffect(() => {
@@ -476,37 +545,26 @@ export default function MirrorApp() {
                 onRefreshDevices={handleRefreshDevices}
                 toolbarPosition="bottom"
                 showDeviceSkin={showDeviceSkin}
-                onShowDeviceSkinChange={(value) => updateSetting('showDeviceSkin', value)}
+                onShowDeviceSkinChange={handleShowDeviceSkinChange}
                 gradientColor1={settings.gradientColor1}
                 gradientColor2={settings.gradientColor2}
-                onGradientColor1Change={(color1) => {
-                    updateSetting('gradientColor1', color1);
-                }}
-                onGradientColor2Change={(color2) => {
-                    updateSetting('gradientColor2', color2);
-                }}
+                onGradientColor1Change={handleGradientColor1Change}
+                onGradientColor2Change={handleGradientColor2Change}
                 deviceSkinColor={settings.deviceSkinColor}
-                onDeviceSkinColorChange={(color) => {
-                    updateSetting('deviceSkinColor', color);
-                }}
+                onDeviceSkinColorChange={handleDeviceSkinColorChange}
                 touchFeedback={settings.touchFeedback !== false}
-                onTouchFeedbackChange={(enabled) => updateSetting('touchFeedback', enabled)}
+                onTouchFeedbackChange={handleTouchFeedbackChange}
                 quality={settings.quality}
-                onQualityChange={(value) => updateSetting('quality', value)}
+                onQualityChange={handleQualityChange}
                 fps={settings.fps}
-                onFpsChange={(value) => updateSetting('fps', value)}
+                onFpsChange={handleFpsChange}
                 bitrate={settings.bitrate}
-                onBitrateChange={(value) => updateSetting('bitrate', value)}
+                onBitrateChange={handleBitrateChange}
                 cursorStyle={settings.cursorStyle}
-                onCursorStyleChange={(value) => updateSetting('cursorStyle', value)}
-                onResetSettings={() => {
-                    resetSettings();
-                    resetZoom();
-                }}
+                onCursorStyleChange={handleCursorStyleChange}
+                onResetSettings={handleResetSettings}
                 persistentMirroring={persistentMirroring}
-                onPersistentMirroringChange={(enabled) =>
-                    updateSetting('persistentMirroring', enabled)
-                }
+                onPersistentMirroringChange={handlePersistentMirroringChange}
             />
         </>
     );

@@ -17,7 +17,7 @@
   border-radius: 12px;
   color: var(--vsc-text);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .device-selector-btn:hover {
@@ -32,7 +32,7 @@
 .device-selector-arrow {
   flex: 0 0 auto;
   color: var(--vsc-text-muted);
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
 .device-selector-arrow.open {
@@ -91,12 +91,12 @@
   background: var(--vsc-secondary);
   border: 1px solid var(--vsc-border);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
   z-index: 100;
   overflow: hidden;
   min-width: 150px;
   max-width: fit-content;
-  animation: slideUp 0.2s ease;
+  animation: slideUp var(--dur-base) var(--ease);
 }
 
 .device-dropdown {
@@ -107,28 +107,28 @@
   background: var(--vsc-secondary);
   border: 1px solid var(--vsc-border);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-2);
   z-index: 100;
   overflow: hidden;
-  animation: slideUp 0.2s ease;
+  animation: slideUp var(--dur-base) var(--ease);
 }
 
 .device-selector.open-down .device-dropdown {
   bottom: auto;
   top: calc(100% + 6px);
-  animation: slideDown 0.2s ease;
+  animation: slideDown var(--dur-base) var(--ease);
 }
 
 .device-selector.open-up .device-dropdown {
   bottom: calc(100% + 6px);
   top: auto;
-  animation: slideUp 0.2s ease;
+  animation: slideUp var(--dur-base) var(--ease);
 }
 
 .toolbar-at-top .device-dropdown {
   bottom: auto;
   top: calc(100% + 4px);
-  animation: slideDown 0.2s ease;
+  animation: slideDown var(--dur-base) var(--ease);
 }
 
 .device-dropdown-header {
@@ -156,7 +156,7 @@
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .device-dropdown-refresh:hover {
@@ -197,7 +197,7 @@
   border: none;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--dur-fast) var(--ease);
 }
 
 .device-item:hover {
@@ -232,7 +232,7 @@
 .device-item-id {
   font-size: 10px;
   color: var(--vsc-text-muted);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

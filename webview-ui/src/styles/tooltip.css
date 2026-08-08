@@ -10,7 +10,7 @@
   transform: translateX(-50%) translateY(4px);
   opacity: 0;
   visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
   pointer-events: none;
   z-index: 1000;
 }
@@ -32,7 +32,6 @@
     0 12px 24px rgba(0, 0, 0, 0.4),
     0 0 0 1px rgba(255, 255, 255, 0.03) inset,
     0 0 20px rgba(88, 166, 255, 0.05);
-  backdrop-filter: blur(8px);
   min-width: max-content;
 }
 
@@ -113,7 +112,7 @@
   font-size: 9px;
   font-weight: 600;
   color: #8b949e;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   box-shadow: 0 1px 0 #1c2128;
 }
 
@@ -256,7 +255,7 @@
     0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   opacity: 0;
   visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
   pointer-events: none;
   z-index: 1000;
 }
@@ -279,7 +278,7 @@
   border-bottom-color: #30363d;
   opacity: 0;
   visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease), background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
   pointer-events: none;
   z-index: 1000;
 }
@@ -311,7 +310,5 @@
 /* Glassmorphism effect for premium feel */
 .tooltip-glass {
   background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }

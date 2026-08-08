@@ -39,7 +39,7 @@
   justify-content: center;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
 }
 
 .placeholder-play-button:hover {
@@ -179,7 +179,7 @@
   font-size: 10px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .error-retry-btn:hover {

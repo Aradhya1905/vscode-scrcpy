@@ -82,7 +82,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .fm-icon-btn:hover:not(:disabled) {
@@ -151,7 +151,7 @@
   cursor: pointer;
   text-align: left;
   color: var(--vsc-text);
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .fm-nav-item:hover {
@@ -208,7 +208,7 @@
 .fm-hint-value {
   font-size: 12px;
   color: var(--vsc-text);
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   word-break: break-all;
   line-height: 1.35;
 }
@@ -247,7 +247,7 @@
   border-radius: 10px;
   cursor: pointer;
   font-size: 12px;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .fm-crumb:hover:not(:disabled) {
@@ -329,7 +329,7 @@
   color: var(--vsc-text);
   text-align: left;
   cursor: pointer;
-  transition: transform 0.10s ease, background 0.12s ease, border-color 0.12s ease;
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
 .fm-row:hover {
@@ -373,7 +373,7 @@
   justify-content: flex-end;
   opacity: 0;
   transform: translateX(4px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   pointer-events: none;
 }
 
@@ -395,7 +395,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .fm-row-action-btn:hover {
@@ -454,7 +454,7 @@
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  animation: fmToastIn 140ms ease-out;
+  animation: fmToastIn var(--dur-fast) var(--ease);
 }
 
 .fm-toast.error {
@@ -542,7 +542,7 @@
 }
 
 .fm-modal-mono {
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   color: var(--vsc-text);
 }
 
@@ -563,7 +563,7 @@
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .fm-btn:hover {

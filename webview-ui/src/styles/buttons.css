@@ -11,7 +11,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
   white-space: nowrap;
 }
 
@@ -41,7 +41,7 @@
   border-radius: 6px;
   color: var(--vsc-text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
 .btn-icon:hover:not(:disabled) {
@@ -62,9 +62,12 @@
   color: var(--vsc-blue);
 }
 
+/* No width/height here. Lucide renders size={n} as width/height *attributes*,
+   and a CSS rule beats a presentation attribute - a fixed size here silently
+   flattened every size prop in Toolbar.tsx. Glyph size belongs at the call
+   site; 24px is lucide's own default when no size prop is given. */
 .btn-icon svg {
-  width: 16px;
-  height: 16px;
+  flex-shrink: 0;
 }
 
 .btn-primary {

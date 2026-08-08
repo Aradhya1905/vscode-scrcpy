@@ -3,7 +3,7 @@
   position: relative;
   order: 2;
   flex-shrink: 0;
-  transition: transform 0.3s ease-out;
+  transition: transform var(--dur-base) var(--ease);
   z-index: 50;
 }
 
@@ -14,6 +14,7 @@
 .toolbar {
   background: var(--vsc-secondary);
   border-top: 1px solid var(--vsc-border);
+  box-shadow: var(--shadow-1);
   padding: 6px 8px;
 }
 
@@ -42,16 +43,19 @@
   bottom: 0;
   cursor: pointer;
   z-index: 40;
-  background: rgba(139, 148, 158, 0.5);
-  backdrop-filter: blur(4px);
+  /* Opaque: this sits at the bottom edge of the video area, where a blurred
+     layer would force a composite pass per decoded frame */
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   padding: 2px 8px;
   border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  transition: all 0.2s ease;
+  box-shadow: var(--shadow-1);
+  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
 }
 
 .toolbar-indicator:hover {
-  background: rgba(139, 148, 158, 0.7);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
 .toolbar-at-top .toolbar-indicator {

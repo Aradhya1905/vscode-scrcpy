@@ -49,7 +49,7 @@
   justify-content: center;
   transform-origin: center center;
   will-change: transform;
-  transition: transform 0.12s ease-out;
+  transition: transform var(--dur-fast) var(--ease);
 }
 
 .video-container.no-device-skin .zoom-content {
