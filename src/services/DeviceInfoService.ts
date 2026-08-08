@@ -28,11 +28,34 @@ export interface DeviceInfoServiceEvents {
     onError: (error: string) => void;
 }
 
+/** Immutable per device, so it is fetched once and never re-polled. */
+interface StaticDeviceInfo {
+    model: string;
+    androidVersion: string;
+    sdkVersion: number;
+}
+
+/**
+ * Network and storage move slowly and cost the heaviest dumpsys targets, so they
+ * ride a slower tier than battery.
+ */
+const SLOW_TIER_MS = 30_000;
+
+const GETPROP_TIMEOUT_MS = 5_000;
+const DUMPSYS_TIMEOUT_MS = 10_000;
+
 export class DeviceInfoService {
     private deviceId: string | null = null;
     private pollingInterval: NodeJS.Timeout | null = null;
     private events: DeviceInfoServiceEvents;
     private pollingIntervalMs: number;
+
+    private staticInfo: StaticDeviceInfo | null = null;
+    private staticInfoInFlight: Promise<StaticDeviceInfo> | null = null;
+
+    private slowTier: { network: DeviceInfo['network']; storage: DeviceInfo['storage'] } | null =
+        null;
+    private slowTierAt = 0;
 
     constructor(events: DeviceInfoServiceEvents, pollingIntervalMs: number = 5000) {
         this.events = events;
@@ -40,12 +63,29 @@ export class DeviceInfoService {
     }
 
     setDevice(deviceId: string | null): void {
+        if (deviceId === this.deviceId) {
+            // Re-selecting the same device must not restart the timer, which would
+            // fire an immediate extra fetch on every reconnect notification.
+            if (deviceId && !this.pollingInterval) {
+                this.startPolling();
+            }
+            return;
+        }
+
         this.deviceId = deviceId;
+        this.clearCaches();
         if (deviceId) {
             this.startPolling();
         } else {
             this.stopPolling();
         }
+    }
+
+    private clearCaches(): void {
+        this.staticInfo = null;
+        this.staticInfoInFlight = null;
+        this.slowTier = null;
+        this.slowTierAt = 0;
     }
 
     /**
@@ -84,30 +124,49 @@ export class DeviceInfoService {
         }
     }
 
-    async fetchDeviceInfo(): Promise<void> {
-        if (!this.deviceId) {
+    /**
+     * One tick. Battery is read every time; the immutable props are read once per
+     * device and network/storage only when their slower tier is due.
+     */
+    async fetchDeviceInfo(force = false): Promise<void> {
+        const deviceId = this.deviceId;
+        if (!deviceId) {
             return;
         }
 
         try {
-            const [battery, model, androidVersion, sdkVersion, network, storage] =
-                await Promise.all([
-                    this.getBatteryInfo(),
-                    this.getDeviceModel(),
-                    this.getAndroidVersion(),
-                    this.getSdkVersion(),
-                    this.getNetworkInfo(),
-                    this.getStorageInfo(),
-                ]);
+            const cachedSlowTier = this.slowTier;
+            const slowTierDue =
+                force || cachedSlowTier === null || Date.now() - this.slowTierAt >= SLOW_TIER_MS;
+
+            const [battery, staticInfo, freshSlowTier] = await Promise.all([
+                this.getBatteryInfo(),
+                this.getStaticInfo(),
+                slowTierDue ? this.fetchSlowTier() : Promise.resolve(null),
+            ]);
+
+            if (this.deviceId !== deviceId) {
+                // Device changed while the tick was in flight; its results are stale.
+                return;
+            }
+
+            const slowTier = freshSlowTier ?? cachedSlowTier;
+            if (!slowTier) {
+                return;
+            }
+            if (freshSlowTier) {
+                this.slowTier = freshSlowTier;
+                this.slowTierAt = Date.now();
+            }
 
             const deviceInfo: DeviceInfo = {
-                id: this.deviceId,
-                model: model || 'Unknown Device',
-                androidVersion: androidVersion || 'Unknown',
-                sdkVersion: sdkVersion || 0,
+                id: deviceId,
+                model: staticInfo.model,
+                androidVersion: staticInfo.androidVersion,
+                sdkVersion: staticInfo.sdkVersion,
                 battery,
-                network,
-                storage,
+                network: slowTier.network,
+                storage: slowTier.storage,
             };
 
             this.events.onDeviceInfo(deviceInfo);
@@ -117,7 +176,18 @@ export class DeviceInfoService {
         }
     }
 
-    private runAdbCommand(args: string[]): Promise<string> {
+    private async fetchSlowTier(): Promise<{
+        network: DeviceInfo['network'];
+        storage: DeviceInfo['storage'];
+    }> {
+        const [network, storage] = await Promise.all([
+            this.getNetworkInfo(),
+            this.getStorageInfo(),
+        ]);
+        return { network, storage };
+    }
+
+    private runAdbCommand(args: string[], timeoutMs: number): Promise<string> {
         return new Promise((resolve, reject) => {
             if (!this.deviceId) {
                 reject(new Error('No device selected'));
@@ -127,34 +197,56 @@ export class DeviceInfoService {
             const adb = spawn(AdbPathResolver.getAdbCommand(), ['-s', this.deviceId, ...args], {
                 windowsHide: true,
             });
-            let output = '';
-            let stderr = '';
 
-            adb.stdout.on('data', (data) => {
-                output += data.toString();
-            });
+            // dumpsys wifi/connectivity output is large; concatenate chunks once.
+            const stdoutChunks: Buffer[] = [];
+            const stderrChunks: Buffer[] = [];
+            let settled = false;
 
-            adb.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
+            const timer = setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                adb.kill();
+                reject(new Error(`ADB command timed out after ${timeoutMs}ms: ${args.join(' ')}`));
+            }, timeoutMs);
+
+            const finish = (fn: () => void) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timer);
+                fn();
+            };
+
+            adb.stdout.on('data', (data: Buffer) => stdoutChunks.push(data));
+            adb.stderr.on('data', (data: Buffer) => stderrChunks.push(data));
 
             adb.on('close', (code) => {
-                if (code === 0) {
-                    resolve(output.trim());
-                } else {
-                    reject(new Error(stderr || `Command failed with code ${code}`));
-                }
+                finish(() => {
+                    if (code === 0) {
+                        resolve(Buffer.concat(stdoutChunks).toString('utf8').trim());
+                    } else {
+                        const stderr = Buffer.concat(stderrChunks).toString('utf8').trim();
+                        reject(new Error(stderr || `Command failed with code ${code}`));
+                    }
+                });
             });
 
             adb.on('error', (err) => {
-                reject(new Error(`ADB command error: ${err.message}`));
+                finish(() => reject(new Error(`ADB command error: ${err.message}`)));
             });
         });
     }
 
     private async getBatteryInfo(): Promise<DeviceInfo['battery']> {
         try {
-            const output = await this.runAdbCommand(['shell', 'dumpsys', 'battery']);
+            const output = await this.runAdbCommand(
+                ['shell', 'dumpsys', 'battery'],
+                DUMPSYS_TIMEOUT_MS
+            );
 
             let level = 0;
             let isCharging = false;
@@ -186,47 +278,64 @@ export class DeviceInfoService {
         }
     }
 
-    private async getDeviceModel(): Promise<string> {
-        try {
-            const output = await this.runAdbCommand(['shell', 'getprop', 'ro.product.model']);
-            return output.trim() || 'Unknown Device';
-        } catch (error) {
-            console.warn('Failed to get device model:', error);
-            return 'Unknown Device';
+    /**
+     * Model, release and SDK cannot change for a given device id, so they are read
+     * once - in a single shell invocation rather than three - and cached until the
+     * device changes. A failed read is not cached, so it retries on the next tick.
+     */
+    private async getStaticInfo(): Promise<StaticDeviceInfo> {
+        if (this.staticInfo) {
+            return this.staticInfo;
         }
+        if (this.staticInfoInFlight) {
+            return this.staticInfoInFlight;
+        }
+
+        const fetch = this.readStaticInfo()
+            .then((info) => {
+                this.staticInfo = info;
+                return info;
+            })
+            .catch((error) => {
+                console.warn('Failed to get static device info:', error);
+                return { model: 'Unknown Device', androidVersion: 'Unknown', sdkVersion: 0 };
+            })
+            .finally(() => {
+                if (this.staticInfoInFlight === fetch) {
+                    this.staticInfoInFlight = null;
+                }
+            });
+
+        this.staticInfoInFlight = fetch;
+        return fetch;
     }
 
-    private async getAndroidVersion(): Promise<string> {
-        try {
-            const output = await this.runAdbCommand([
+    private async readStaticInfo(): Promise<StaticDeviceInfo> {
+        const output = await this.runAdbCommand(
+            [
                 'shell',
-                'getprop',
-                'ro.build.version.release',
-            ]);
-            return output.trim() || 'Unknown';
-        } catch (error) {
-            console.warn('Failed to get Android version:', error);
-            return 'Unknown';
-        }
-    }
+                'getprop ro.product.model; getprop ro.build.version.release; getprop ro.build.version.sdk',
+            ],
+            GETPROP_TIMEOUT_MS
+        );
 
-    private async getSdkVersion(): Promise<number> {
-        try {
-            const output = await this.runAdbCommand(['shell', 'getprop', 'ro.build.version.sdk']);
-            const sdk = parseInt(output.trim(), 10);
-            return isNaN(sdk) ? 0 : sdk;
-        } catch (error) {
-            console.warn('Failed to get SDK version:', error);
-            return 0;
-        }
+        const [model = '', release = '', sdk = ''] = output.split('\n').map((line) => line.trim());
+        const sdkVersion = parseInt(sdk, 10);
+
+        return {
+            model: model || 'Unknown Device',
+            androidVersion: release || 'Unknown',
+            sdkVersion: isNaN(sdkVersion) ? 0 : sdkVersion,
+        };
     }
 
     private async getNetworkInfo(): Promise<DeviceInfo['network']> {
         try {
             // Check WiFi status
-            const wifiOutput = await this.runAdbCommand(['shell', 'dumpsys', 'wifi']).catch(
-                () => ''
-            );
+            const wifiOutput = await this.runAdbCommand(
+                ['shell', 'dumpsys', 'wifi'],
+                DUMPSYS_TIMEOUT_MS
+            ).catch(() => '');
 
             let connected = false;
             let type: 'wifi' | 'cellular' | 'ethernet' | 'none' = 'none';
@@ -252,11 +361,10 @@ export class DeviceInfoService {
             // Fallback: check connectivity service
             if (!connected) {
                 try {
-                    const connectivityOutput = await this.runAdbCommand([
-                        'shell',
-                        'dumpsys',
-                        'connectivity',
-                    ]);
+                    const connectivityOutput = await this.runAdbCommand(
+                        ['shell', 'dumpsys', 'connectivity'],
+                        DUMPSYS_TIMEOUT_MS
+                    );
                     if (connectivityOutput.includes('CONNECTED')) {
                         connected = true;
                         // Try to determine type from connectivity output
@@ -282,7 +390,7 @@ export class DeviceInfoService {
 
     private async getStorageInfo(): Promise<DeviceInfo['storage']> {
         try {
-            const output = await this.runAdbCommand(['shell', 'df', '/data']);
+            const output = await this.runAdbCommand(['shell', 'df', '/data'], DUMPSYS_TIMEOUT_MS);
 
             // Parse df output: Filesystem 1K-blocks Used Available Use% Mounted on
             const lines = output.split('\n');
@@ -311,5 +419,6 @@ export class DeviceInfoService {
     dispose(): void {
         this.stopPolling();
         this.deviceId = null;
+        this.clearCaches();
     }
 }

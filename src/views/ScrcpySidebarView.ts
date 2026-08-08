@@ -77,6 +77,12 @@ export class ScrcpySidebarView {
             },
         });
 
+        // A live mirror already proves which device is connected, so preferred-device
+        // lookups behind UI actions can skip `adb devices -l` entirely.
+        this._deviceManager.setActiveDeviceProvider(() =>
+            this._scrcpyService?.isActive() ? this._scrcpyService.getCurrentDeviceId() : null
+        );
+
         // Initialize DeviceInfoService
         this._deviceInfoService = new DeviceInfoService({
             onDeviceInfo: (info) => {
@@ -127,6 +133,16 @@ export class ScrcpySidebarView {
             async () => {
                 const wasVisible = this._isViewVisible;
                 this._isViewVisible = this._view.visible;
+
+                // Device info paints nothing while hidden. Gate it independently of
+                // persistent mirroring, which otherwise keeps the poll running for a
+                // surface no one can see.
+                if (this._view.visible) {
+                    this._deviceInfoService?.resumePolling();
+                } else {
+                    this._deviceInfoService?.pausePolling();
+                }
+
                 if (this._view.visible) {
                     if (
                         this._persistentMirroringEnabled &&

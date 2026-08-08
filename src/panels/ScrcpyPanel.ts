@@ -84,6 +84,12 @@ export class ScrcpyPanel {
             },
         });
 
+        // A live mirror already proves which device is connected, so preferred-device
+        // lookups behind UI actions can skip `adb devices -l` entirely.
+        this._deviceManager.setActiveDeviceProvider(() =>
+            this._scrcpyService?.isActive() ? this._scrcpyService.getCurrentDeviceId() : null
+        );
+
         // Initialize DeviceInfoService
         this._deviceInfoService = new DeviceInfoService({
             onDeviceInfo: (info) => {

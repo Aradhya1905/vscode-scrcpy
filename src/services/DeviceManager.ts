@@ -44,11 +44,28 @@ export class DeviceManager {
     private static readonly CACHE_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
     private static readonly MAX_CACHE_SIZE = 50; // Maximum number of cached devices
 
+    // `adb devices -l` costs a spawn (plus name resolution on a cache miss) and
+    // getPreferredDevice() sits behind ~20 UI actions, so bursts share one result.
+    private static readonly DEVICE_LIST_TTL_MS = 2000;
+    private _deviceListCache: DeviceListItem[] | null = null;
+    private _deviceListAt = 0;
+    private _deviceListInFlight: Promise<DeviceListItem[]> | null = null;
+
+    /**
+     * Supplies the device of a live mirror session. That device is connected by
+     * definition, so consulting it first skips enumeration entirely.
+     */
+    private _activeDeviceProvider: (() => string | null) | null = null;
+
     constructor(context: vscode.ExtensionContext, events: DeviceManagerEvents) {
         this.context = context;
         this.events = events;
         // Load last selected device from storage
         this.currentDeviceId = this.context.globalState.get<string>('scrcpy.lastDeviceId') || null;
+    }
+
+    setActiveDeviceProvider(provider: (() => string | null) | null): void {
+        this._activeDeviceProvider = provider;
     }
 
     // Clean up expired cache entries and enforce size limit (LRU eviction)
@@ -179,7 +196,40 @@ export class DeviceManager {
         return { name: fallback, model: parsedModel };
     }
 
-    async enumerateDevices(): Promise<DeviceListItem[]> {
+    /**
+     * Returns the connected devices, reusing a result at most
+     * `DEVICE_LIST_TTL_MS` old and joining any scan already in flight.
+     */
+    async enumerateDevices(force = false): Promise<DeviceListItem[]> {
+        if (
+            !force &&
+            this._deviceListCache &&
+            Date.now() - this._deviceListAt < DeviceManager.DEVICE_LIST_TTL_MS
+        ) {
+            return this._deviceListCache;
+        }
+
+        if (this._deviceListInFlight) {
+            return this._deviceListInFlight;
+        }
+
+        const scan = this._enumerateDevices()
+            .then((devices) => {
+                this._deviceListCache = devices;
+                this._deviceListAt = Date.now();
+                return devices;
+            })
+            .finally(() => {
+                if (this._deviceListInFlight === scan) {
+                    this._deviceListInFlight = null;
+                }
+            });
+
+        this._deviceListInFlight = scan;
+        return scan;
+    }
+
+    private _enumerateDevices(): Promise<DeviceListItem[]> {
         return new Promise((resolve, reject) => {
             const adb = spawn(AdbPathResolver.getAdbCommand(), ['devices', '-l'], {
                 windowsHide: true,
@@ -296,9 +346,10 @@ export class DeviceManager {
         });
     }
 
-    async refreshDeviceList(): Promise<void> {
+    /** Explicit refresh, so it bypasses the TTL by default and reseeds the cache. */
+    async refreshDeviceList(force = true): Promise<void> {
         try {
-            const devices = await this.enumerateDevices();
+            const devices = await this.enumerateDevices(force);
             this.events.onDeviceList(devices);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -320,19 +371,25 @@ export class DeviceManager {
     }
 
     async getPreferredDevice(): Promise<string | null> {
-        // First check if last selected device is still connected
+        // A live mirror session proves its device is connected - no enumeration.
+        const activeDeviceId = this._activeDeviceProvider?.();
+        if (activeDeviceId) {
+            return activeDeviceId;
+        }
+
+        // One enumeration serves both checks below. The old code ran a second full
+        // scan whenever the remembered device was gone.
+        const devices = await this.enumerateDevices();
+
         if (this.currentDeviceId) {
-            const devices = await this.enumerateDevices();
-            const device = devices.find(
+            const remembered = devices.find(
                 (d) => d.id === this.currentDeviceId && d.status === 'device'
             );
-            if (device) {
-                return device.id;
+            if (remembered) {
+                return remembered.id;
             }
         }
 
-        // Otherwise, return first available device
-        const devices = await this.enumerateDevices();
         const availableDevice = devices.find((d) => d.status === 'device');
         return availableDevice?.id || null;
     }
