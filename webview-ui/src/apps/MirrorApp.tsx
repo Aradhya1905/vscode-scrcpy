@@ -18,8 +18,6 @@ export default function MirrorApp() {
     const [error, setError] = useState<string | undefined>();
     const [deviceList, setDeviceList] = useState<DeviceListItem[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-    // Remount key for the canvas - only the device skin toggle should remount it
-    const [deviceSkinKey, setDeviceSkinKey] = useState(0);
     // Rect-cache invalidation counter - bumped by anything that moves the canvas
     const [canvasCacheKey, setCanvasCacheKey] = useState(0);
     const [isPanning, setIsPanning] = useState(false);
@@ -331,30 +329,9 @@ export default function MirrorApp() {
         [postMessage]
     );
 
-    // Track previous device skin state to avoid restart on mount
-    const prevDeviceSkinRef = useRef(showDeviceSkin);
-
-    // Restart streaming when device skin is toggled
-    useEffect(() => {
-        // Only restart if device skin actually changed (not on initial mount)
-        if (isConnected && prevDeviceSkinRef.current !== showDeviceSkin) {
-            // Restart streaming to update video size
-            addLog('Device skin changed, restarting stream...');
-            handleStop();
-            // Wait a bit before restarting to ensure clean stop
-            const timer = setTimeout(() => {
-                handleStart();
-            }, 300);
-            prevDeviceSkinRef.current = showDeviceSkin;
-            return () => clearTimeout(timer);
-        }
-        prevDeviceSkinRef.current = showDeviceSkin;
-    }, [showDeviceSkin, isConnected, handleStop, handleStart, addLog]);
-
-    // Remount the canvas when the device skin changes (video size changes with it)
-    useEffect(() => {
-        setDeviceSkinKey((prev) => prev + 1);
-    }, [showDeviceSkin]);
+    // Toggling the device skin is a pure CSS change: the canvas backing store is
+    // sized from the decoded frame, not from the skin, so the stream keeps running.
+    // The canvas must stay mounted for that - see the `skinVisible` prop below.
 
     // Invalidate the canvas rect cache when the rendered geometry changes.
     // A CSS transform doesn't trigger the canvas ResizeObserver, so zoom/pan must
@@ -419,34 +396,14 @@ export default function MirrorApp() {
                                 } as CSSProperties
                             }
                         >
-                            {showDeviceSkin ? (
-                                <PhoneFrame
-                                    key={`phone-frame-${settings.deviceSkinColor || 'default'}`}
-                                    skinColor={settings.deviceSkinColor}
-                                >
-                                    <div className="mirror-stage">
-                                        <VideoCanvas
-                                            key={deviceSkinKey}
-                                            isConnected={isConnected}
-                                            canvasRef={setCanvas}
-                                            getVideoSize={getVideoSize}
-                                            onTouchEvent={handleTouchEvent}
-                                            onScrollEvent={handleScrollEvent}
-                                            onKeyEvent={handleKeyEvent}
-                                            onPasteText={handlePasteText}
-                                            onLog={addLog}
-                                            invalidateCacheKey={canvasCacheKey}
-                                            touchEnabled={settings.touchFeedback !== false}
-                                            onZoomWheel={zoomAtPoint}
-                                            onPan={panBy}
-                                            onPanStateChange={setIsPanning}
-                                        />
-                                    </div>
-                                </PhoneFrame>
-                            ) : (
+                            {/* Rendered unconditionally: swapping the canvas between two
+                                parents would remount it and drop the running stream. */}
+                            <PhoneFrame
+                                skinColor={settings.deviceSkinColor}
+                                skinVisible={showDeviceSkin}
+                            >
                                 <div className="mirror-stage">
                                     <VideoCanvas
-                                        key={deviceSkinKey}
                                         isConnected={isConnected}
                                         canvasRef={setCanvas}
                                         getVideoSize={getVideoSize}
@@ -462,7 +419,7 @@ export default function MirrorApp() {
                                         onPanStateChange={setIsPanning}
                                     />
                                 </div>
-                            )}
+                            </PhoneFrame>
                         </div>
                         <ZoomHud
                             zoom={zoom}

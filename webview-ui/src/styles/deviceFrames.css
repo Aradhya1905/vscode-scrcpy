@@ -167,3 +167,31 @@
   z-index: 15;
   opacity: 0.8;
 }
+
+/* ===== SKIN HIDDEN ===== */
+/* The frame stays mounted when the skin is turned off so the video canvas keeps
+   its DOM identity - remounting it would detach the decoder's 2D context and
+   force a stream restart. Collapse it to a transparent full-size box instead. */
+.samsung-s20-frame.skin-hidden {
+  aspect-ratio: auto;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.samsung-s20-frame.skin-hidden .samsung-s20-screen {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.samsung-s20-frame.skin-hidden .samsung-s20-active-screen {
+  border-radius: 0;
+}
+
+.samsung-s20-frame.skin-hidden .samsung-s20-camera-cutout,
+.samsung-s20-frame.skin-hidden .samsung-s20-button-right,
+.samsung-s20-frame.skin-hidden .samsung-s20-button-right-volume {
+  display: none;
+}
