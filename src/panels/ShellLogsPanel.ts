@@ -77,6 +77,20 @@ export class ShellLogsPanel {
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
+        // A hidden panel renders nothing, so stop forwarding entries into it. The
+        // logcat process keeps running and the service buffers, so no lines are lost.
+        this._panel.onDidChangeViewState(
+            () => {
+                if (this._panel.visible) {
+                    this._logcatService.resume();
+                } else {
+                    this._logcatService.pause();
+                }
+            },
+            null,
+            this._disposables
+        );
+
         this._panel.webview.onDidReceiveMessage(
             async (message) => {
                 await this._handleMessage(message);
@@ -229,6 +243,10 @@ export class ShellLogsPanel {
                 buffers: options?.buffers || ['main', 'crash'],
                 clear: options?.clear,
             });
+            // startStreaming() resets the paused flag; re-apply it if we are hidden.
+            if (!this._panel.visible) {
+                this._logcatService.pause();
+            }
             this._postMessage({ type: 'logcat-started' });
         } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);

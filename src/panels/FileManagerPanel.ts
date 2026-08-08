@@ -34,7 +34,8 @@ export class FileManagerPanel {
             column || vscode.ViewColumn.One,
             {
                 enableScripts: true,
-                retainContextWhenHidden: true,
+                // No decoder, canvas or stream to keep alive - the listing is re-fetched
+                // on reveal, so retaining the whole React tree only costs memory.
                 localResourceRoots: [context.extensionUri, context.globalStorageUri],
             }
         );

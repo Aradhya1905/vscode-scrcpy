@@ -48,6 +48,25 @@ export class DeviceInfoService {
         }
     }
 
+    /**
+     * Stops the poll timer without forgetting the device. Used when the owning
+     * webview is hidden, so a backgrounded surface stops spawning adb processes.
+     */
+    pausePolling(): void {
+        this.stopPolling();
+    }
+
+    /**
+     * Restarts polling if a device is still selected. Fetches once immediately so
+     * a revealed webview does not show stale info for up to a full interval.
+     */
+    resumePolling(): void {
+        if (!this.deviceId || this.pollingInterval) {
+            return;
+        }
+        this.startPolling();
+    }
+
     private startPolling(): void {
         this.stopPolling();
         // Fetch immediately

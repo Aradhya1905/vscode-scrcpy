@@ -24,6 +24,7 @@ export class ScrcpyPanel {
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _adbShellService: AdbShellService;
+    private _isPanelVisible: boolean = true;
 
     // Maximum buffer size before dropping frames (2MB)
     private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
@@ -99,6 +100,32 @@ export class ScrcpyPanel {
         this._panel.webview.html = this._getHtmlForWebview();
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+
+        // The panel keeps `retainContextWhenHidden`, so nothing tears itself down when
+        // the tab moves to the background. Without this handler the scrcpy read loop,
+        // the encode + IPC path and the device-info poll all stay hot for zero pixels.
+        this._panel.onDidChangeViewState(
+            () => {
+                const wasVisible = this._isPanelVisible;
+                this._isPanelVisible = this._panel.visible;
+
+                if (this._isPanelVisible === wasVisible) {
+                    return;
+                }
+
+                if (this._isPanelVisible) {
+                    this._deviceInfoService?.resumePolling();
+                    if (this._scrcpyService?.isActive()) {
+                        this._resyncVideoStream();
+                    }
+                } else {
+                    this._deviceInfoService?.pausePolling();
+                    this._dropBufferedVideo();
+                }
+            },
+            null,
+            this._disposables
+        );
 
         this._panel.webview.onDidReceiveMessage(
             async (message) => {
@@ -303,6 +330,12 @@ export class ScrcpyPanel {
         this._scrcpyService = new ScrcpyService(
             {
                 onVideoData: (data) => {
+                    // Nothing can be rendered while the tab is in the background, so drop
+                    // the packet before paying for the copy, the concat and the base64.
+                    if (!this._isPanelVisible) {
+                        return;
+                    }
+
                     // Buffer video data and send in batches for better performance
                     // Check buffer size limit to prevent unbounded memory growth
                     if (this._videoBufferSize + data.length > ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE) {
@@ -370,14 +403,30 @@ export class ScrcpyPanel {
     }
 
     private _stopStreaming() {
+        this._dropBufferedVideo();
+        this._scrcpyService?.stop();
+        this._scrcpyService = null;
+    }
+
+    private _dropBufferedVideo(): void {
         if (this._sendVideoTimeout) {
             clearTimeout(this._sendVideoTimeout);
             this._sendVideoTimeout = null;
         }
         this._videoBuffer = [];
         this._videoBufferSize = 0;
-        this._scrcpyService?.stop();
-        this._scrcpyService = null;
+    }
+
+    /**
+     * Recovers the webview decoder after a gap in the forwarded stream (e.g. the
+     * panel was hidden). Anything still buffered belongs to the old GOP.
+     */
+    private _resyncVideoStream(): void {
+        this._dropBufferedVideo();
+
+        // Ordering matters: the reset must reach the webview before the new frames do
+        this._panel.webview.postMessage({ type: 'video-reset' });
+        this._scrcpyService?.requestKeyFrame();
     }
 
     private _handleTouchEvent(message: any) {
