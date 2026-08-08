@@ -51,26 +51,29 @@ export default function MirrorApp() {
         // Logging disabled for performance
     }, []);
 
-    const { setCanvas, processVideoPacket, reset, getVideoSize } = useVideoDecoder({
-        onLog: addLog,
-    });
-
-    // Track status in a ref so video processing doesn't trigger re-render deps
-    const statusRef = useRef(status);
-    statusRef.current = status;
+    const { setCanvas, processVideoConfig, processVideoPacket, reset, getVideoSize } =
+        useVideoDecoder({
+            onLog: addLog,
+        });
 
     // Use a ref to store postMessage to avoid circular dependency
     const postMessageRef = useRef<((msg: any) => void) | null>(null);
 
     const handleMessage = useCallback(
         (message: ExtensionMessage) => {
-            // Process video outside React's batching for maximum performance
-            // Use ref to avoid re-render dependency on status
+            // Process video outside React's batching for maximum performance.
+            // Deliberately not gated on connection status: `connected` is posted
+            // before streaming starts, so gating here can drop the one configuration
+            // packet of the stream and leave a permanently black canvas. The decoder
+            // hook ignores frames it cannot yet decode on its own.
             if (message.type === 'video') {
-                if (statusRef.current === 'connected') {
-                    processVideoPacket(message.data);
-                }
+                processVideoPacket(message.data, message.k === 1, message.pts);
                 return; // Early return - video messages don't need state updates
+            }
+
+            if (message.type === 'video-config') {
+                processVideoConfig(message.data);
+                return;
             }
 
             // Sent when the extension resumes forwarding after skipping frames. Clearing
@@ -128,7 +131,7 @@ export default function MirrorApp() {
                 }
             });
         },
-        [processVideoPacket, reset]
+        [processVideoConfig, processVideoPacket, reset]
     );
 
     const { postMessage } = useVSCodeMessages(handleMessage);

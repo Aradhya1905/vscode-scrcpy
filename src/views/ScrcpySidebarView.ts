@@ -48,11 +48,9 @@ export class ScrcpySidebarView {
         this._videoForwarder = new VideoFrameForwarder({
             postMessage: (message) => this._view.webview.postMessage(message),
             // In persistent mode the stream stays alive while the view is hidden, but
-            // nothing can be rendered, so the packet is dropped before the copy, the
-            // concat and the base64.
+            // nothing can be rendered, so the packet is dropped before it is posted.
             isDeliverable: () => !(this._persistentMirroringEnabled && !this._isViewVisible),
             requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
-            onWarn: (message) => console.warn(message),
         });
 
         this._persistentMirroringEnabled = context.globalState.get<boolean>(
@@ -415,7 +413,7 @@ export class ScrcpySidebarView {
 
         this._scrcpyService = new ScrcpyService(
             {
-                onVideoData: this._videoForwarder.handlePacket,
+                onVideoPacket: this._videoForwarder.handlePacket,
                 onError: (error) => {
                     vscode.window.showErrorMessage(`Scrcpy Error: ${error}`);
                     this._view.webview.postMessage({

@@ -69,7 +69,7 @@ Services handle core business logic with event-driven callbacks.
 ```typescript
 // ✅ DO: Event-driven service pattern
 export interface ScrcpyServiceEvents {
-    onVideoData: (packet: VideoPacket) => void;
+    onVideoPacket: (packet: ScrcpyVideoPacket) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
@@ -297,16 +297,27 @@ this._videoForwarder = new VideoFrameForwarder({
     postMessage: (message) => this._view.webview.postMessage(message),
     isDeliverable: () => !(this._persistentMirroringEnabled && !this._isViewVisible),
     requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
-    onWarn: (message) => console.warn(message),
 });
 
 // Hand the bound handler straight to the service
-onVideoData: this._videoForwarder.handlePacket,
+onVideoPacket: this._videoForwarder.handlePacket,
 ```
 
-It batches at ~8ms, caps the pending batch at 2MB, and enforces one invariant:
-after any gap (hidden surface, saturation, overflow) nothing is forwarded until a
-configuration or keyframe packet arrives.
+It posts one message per access unit - no batching, since `sendFrameMeta: true`
+already delivers exactly one access unit per packet, so a batch window could only
+add latency and merge units the decoder must see separately. The wire format is
+raw `ArrayBuffer`, which VS Code transfers instead of cloning:
+
+```
+{ type: 'video-config', data: ArrayBuffer }                 // SPS+PPS, Annex-B
+{ type: 'video', k: 0 | 1, pts: number, data: ArrayBuffer } // one access unit
+{ type: 'video-reset' }                                     // resync the decoder
+```
+
+SPS+PPS are prepended to every keyframe, so each IDR is self-sufficient and the
+webview can configure or recover from any one of them. One invariant governs every
+gap (hidden surface, saturation, resync): nothing is forwarded until a keyframe
+arrives.
 
 See [services/VideoFrameForwarder.ts](services/VideoFrameForwarder.ts)
 

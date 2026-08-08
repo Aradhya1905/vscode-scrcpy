@@ -15,10 +15,10 @@ import {
     ScrcpyMediaStreamPacket,
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
-import type { VideoPacket } from './VideoFrameForwarder';
+import type { ScrcpyVideoPacket } from './VideoFrameForwarder';
 
 export interface ScrcpyServiceEvents {
-    onVideoData: (packet: VideoPacket) => void;
+    onVideoPacket: (packet: ScrcpyVideoPacket) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
@@ -46,6 +46,8 @@ export class ScrcpyService {
     private extensionPath: string;
     private settings: ScrcpySettings = {};
     private streamAbortController: AbortController | null = null;
+    private ptsBase: number | null = null;
+    private lastPts = 0;
 
     constructor(events: ScrcpyServiceEvents, extensionPath: string) {
         this.events = events;
@@ -210,6 +212,9 @@ export class ScrcpyService {
         this.streamAbortController = new AbortController();
         const abortSignal = this.streamAbortController.signal;
 
+        this.ptsBase = null;
+        this.lastPts = 0;
+
         const reader = stream.getReader();
 
         // The stream is a native WHATWG ReadableStream, so cancel() settles any
@@ -252,16 +257,33 @@ export class ScrcpyService {
 
                 stallTimer.refresh();
 
-                // Send video data to webview. The packet type and keyframe flag
-                // travel with it so the forwarder knows where a dropped stream
-                // may safely resume.
-                if (value.data) {
-                    this.events.onVideoData({
-                        data: Buffer.from(value.data),
-                        isConfiguration: value.type === 'configuration',
-                        isKeyframe: value.type === 'data' && value.keyframe === true,
-                    });
+                if (!value.data || value.data.length === 0) {
+                    continue;
                 }
+
+                // value.data is a subarray view into the shared socket read buffer,
+                // so it has to be copied synchronously here and can never be
+                // retained. A plain Uint8Array rather than Buffer.from: Buffer
+                // allocates from a shared pool, whose .buffer is a slab far larger
+                // than the packet, and the forwarder posts .buffer directly.
+                const data = new Uint8Array(value.data.length);
+                data.set(value.data);
+
+                if (value.type === 'configuration') {
+                    this.events.onVideoPacket({ type: 'config', data });
+                    continue;
+                }
+
+                // The keyframe flag and pts travel with the packet: the forwarder
+                // needs the flag to know where a dropped stream may resume, and the
+                // webview needs the real timestamp instead of synthesizing one from
+                // arrival time.
+                this.events.onVideoPacket({
+                    type: 'frame',
+                    data,
+                    keyframe: value.keyframe === true,
+                    pts: this.rebasePts(value.pts),
+                });
             }
         } catch (error) {
             if (this.isRunning) {
@@ -280,6 +302,32 @@ export class ScrcpyService {
 
             this.streamAbortController = null;
         }
+    }
+
+    /**
+     * Device presentation timestamps, as plain microsecond numbers relative to the
+     * first frame of the session.
+     *
+     * Two reasons not to forward the raw value: a bigint is not cloneable through
+     * VS Code's postMessage path, and `resetVideo()` restarts the encoder, which can
+     * restart its timestamps too. A backwards timestamp makes the decoder reject the
+     * chunk, so the series is rebased on any jump and forced to keep increasing.
+     */
+    private rebasePts(pts: bigint | undefined): number {
+        if (pts === undefined) {
+            // No frame metadata; advance by a nominal frame so the series still moves.
+            this.lastPts += 1000;
+            return this.lastPts;
+        }
+
+        const micros = Number(pts);
+        if (this.ptsBase === null || micros < this.ptsBase) {
+            this.ptsBase = micros - this.lastPts;
+        }
+
+        const rebased = micros - this.ptsBase;
+        this.lastPts = rebased > this.lastPts ? rebased : this.lastPts + 1;
+        return this.lastPts;
     }
 
     private async processOutputMessages(): Promise<void> {
@@ -459,6 +507,8 @@ export class ScrcpyService {
     stop(): void {
         this.isRunning = false;
         this.currentDeviceId = null;
+        this.ptsBase = null;
+        this.lastPts = 0;
 
         // Abort any pending stream reads
         if (this.streamAbortController) {

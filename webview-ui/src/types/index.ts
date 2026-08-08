@@ -199,7 +199,8 @@ export type ExtensionMessage =
     | { type: 'connecting' }
     | { type: 'connected' }
     | { type: 'disconnected' }
-    | { type: 'video'; data: string } // base64 encoded
+    | { type: 'video-config'; data: ArrayBuffer } // SPS+PPS, Annex-B
+    | { type: 'video'; k: 0 | 1; pts: number; data: ArrayBuffer } // exactly one access unit
     | { type: 'video-reset' } // discard decoder state and resync on the next keyframe
     | { type: 'error'; message: string }
     | { type: 'apk-files-selected'; paths: string[] }

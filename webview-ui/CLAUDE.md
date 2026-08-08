@@ -150,19 +150,26 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         canvasRef.current = canvas;
     }, []);
 
-    const processVideoPacket = useCallback((data: string) => {
-        // Base64 decode and process H.264 NAL units
+    const processVideoConfig = useCallback((payload: ArrayBuffer | ArrayBufferView) => {
+        // Find the SPS and configure the decoder
     }, []);
+
+    const processVideoPacket = useCallback(
+        (payload: ArrayBuffer | ArrayBufferView, keyframe: boolean, pts: number) => {
+            // Decode one H.264 access unit
+        },
+        []
+    );
 
     const reset = useCallback(() => {
         // Clean up decoder state
     }, []);
 
-    return { setCanvas, processVideoPacket, reset, getVideoSize };
+    return { setCanvas, processVideoConfig, processVideoPacket, reset, getVideoSize };
 }
 ```
 
-Example: [src/hooks/useVideoDecoder.ts:88-351](src/hooks/useVideoDecoder.ts#L88-L351)
+Example: [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
 
 ### VS Code Message Pattern
 
@@ -181,7 +188,7 @@ window.addEventListener('message', (event) => {
     const message = event.data;
     switch (message.type) {
         case 'video':
-            processVideoPacket(message.data);
+            processVideoPacket(message.data, message.k === 1, message.pts);
             break;
         case 'connected':
             setIsConnected(true);
@@ -236,22 +243,16 @@ const handlePointerMove = useCallback((event: React.PointerEvent) => {
 Example: [src/components/VideoCanvas.tsx:279-327](src/components/VideoCanvas.tsx#L279-L327)
 
 ```typescript
-// ✅ DO: Reuse buffers to reduce GC pressure
-const decodeBufferRef = useRef<Uint8Array | null>(null);
+// ✅ DO: Wrap the transferred buffer instead of copying it
+// The extension posts an exact-bounds ArrayBuffer, so a view over it costs
+// nothing. `new EncodedVideoChunk({data})` copies internally per spec, which
+// makes that the one unavoidable copy per frame.
+const data = new Uint8Array(payload);
 
-const processVideoPacket = useCallback((data: string) => {
-    const len = binaryString.length;
-    if (decodeBufferRef.current && decodeBufferRef.current.length >= len) {
-        // Reuse existing buffer
-        uint8Data = decodeBufferRef.current.subarray(0, len);
-    } else {
-        // Allocate with headroom for future frames
-        decodeBufferRef.current = new Uint8Array(Math.max(len * 2, 256 * 1024));
-    }
-}, []);
+decoder.decode(new EncodedVideoChunk({ type: keyframe ? 'key' : 'delta', timestamp, data }));
 ```
 
-Example: [src/hooks/useVideoDecoder.ts:196-203](src/hooks/useVideoDecoder.ts#L196-L203)
+Example: [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
 
 ---
 
@@ -274,7 +275,7 @@ Example: [src/hooks/useVideoDecoder.ts:196-203](src/hooks/useVideoDecoder.ts#L19
 
 - **[hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)** - H.264 decoding
   - WebCodecs VideoDecoder API
-  - NAL unit parsing (SPS, PPS, IDR, non-IDR)
+  - SPS lookup for codec configuration (`findNal`, once per stream)
   - Frame timing and backpressure handling
 
 - **[hooks/useVSCodeMessages.ts](src/hooks/useVSCodeMessages.ts)** - Extension messaging
@@ -399,27 +400,37 @@ if (videoAspect > canvasAspect) {
 ```
 See [src/components/VideoCanvas.tsx:150-183](src/components/VideoCanvas.tsx#L150-L183)
 
-### Base64 Decoding Performance
+### Video Wire Format
 
-Video data is sent as base64 for efficiency (faster than JSON arrays):
+Video arrives as raw `ArrayBuffer`, one message per H.264 access unit. VS Code
+transfers an `ArrayBuffer` rather than cloning it, so there is no base64 hop and
+no byte-by-byte decode on the main thread:
+
 ```typescript
-// Extension sends: message.data = buffer.toString('base64')
-// Webview receives and decodes:
-const binaryString = atob(data);
+// Extension posts: { type: 'video', k: 0 | 1, pts: number, data: ArrayBuffer }
+// Webview wraps it - no copy:
+const data = new Uint8Array(payload);
 ```
+
+`k` is the keyframe flag and `pts` a monotonic microsecond timestamp, both read
+straight off the message - the webview never scans NAL units to recover them.
+Keyframes arrive with SPS+PPS already prepended, so any keyframe can configure or
+recover the decoder.
 
 ### Frame Dropping for Backpressure
 
-When decoder queue is too deep, drop non-keyframes:
+When decoder queue is too deep, drop non-keyframes. This is the **first** thing
+the packet handler does - `keyframe` is a message field, so the decision costs one
+field read and no parsing:
 ```typescript
 const MAX_DECODE_QUEUE_SIZE = 3;
 
-if (decoderRef.current.decodeQueueSize > MAX_DECODE_QUEUE_SIZE && !hasKeyframe) {
+if (!keyframe && (decoderRef.current?.decodeQueueSize ?? 0) > MAX_DECODE_QUEUE_SIZE) {
     droppedFramesRef.current++;
     return; // Drop this non-keyframe
 }
 ```
-See [src/hooks/useVideoDecoder.ts:254-270](src/hooks/useVideoDecoder.ts#L254-L270)
+See [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
 
 ### Cleanup on Unmount
 
@@ -472,12 +483,12 @@ NAL (Network Abstraction Layer) unit types in H.264:
 | 7 | SPS | Sequence Parameter Set (codec configuration) |
 | 8 | PPS | Picture Parameter Set (picture configuration) |
 
-The decoder is configured when SPS+PPS are received:
+The decoder is configured from the SPS in an Annex-B blob - either the
+`video-config` message or the configuration prepended to any keyframe:
 ```typescript
-if (spsNalRef.current && ppsNalRef.current && !decoderConfiguredRef.current) {
-    const codec = parseSPS(spsNalRef.current); // "avc1.640028"
-    decoder.configure({ codec, optimizeForLatency: true });
-}
+const sps = findNal(annexB, NAL_SPS);
+const codec = parseSPS(sps); // "avc1.640028"
+decoder.configure({ codec, optimizeForLatency: true });
 ```
 
 ---

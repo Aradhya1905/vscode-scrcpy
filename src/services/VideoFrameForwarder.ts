@@ -1,21 +1,20 @@
 /**
  * One access unit as it leaves ScrcpyService.
  *
- * `isConfiguration` and `isKeyframe` come from the scrcpy stream itself; the
- * forwarder needs them to know where a dropped stream may safely resume.
+ * `data` is always backed by a standalone, exact-bounds ArrayBuffer that nothing
+ * else references, so the forwarder can hand it to `postMessage` without another
+ * copy. `keyframe` comes from the scrcpy stream itself, and tells the forwarder
+ * where a dropped stream may safely resume.
  */
-export interface VideoPacket {
-    data: Buffer;
-    isConfiguration: boolean;
-    isKeyframe: boolean;
-}
+export type ScrcpyVideoPacket =
+    | { type: 'config'; data: Uint8Array }
+    | { type: 'frame'; data: Uint8Array; keyframe: boolean; pts: number };
 
 export interface VideoFrameForwarderOptions {
     postMessage: (message: unknown) => unknown;
     /** False when the webview cannot usefully render (hidden view, occluded panel). */
     isDeliverable: () => boolean;
     requestKeyFrame: () => void;
-    onWarn?: (message: string) => void;
 }
 
 export interface VideoFrameForwarderStats {
@@ -24,29 +23,31 @@ export interface VideoFrameForwarderStats {
     droppedHidden: number;
 }
 
-/** ~120fps batching, low enough to stay off the latency budget. */
-const BATCH_INTERVAL_MS = 8;
-
-/** Hard ceiling on the pending batch, so a stalled webview cannot grow the heap. */
-const MAX_BUFFER_BYTES = 2 * 1024 * 1024;
+/** NAL unit types that a decoder can start from. */
+const NAL_IDR = 5;
+const NAL_SPS = 7;
 
 /**
- * Batches H.264 access units from the host into one base64 webview message per
- * tick, and owns the single rule that governs every gap in that stream: once
- * anything is dropped, nothing is forwarded until a keyframe arrives.
+ * Forwards H.264 access units from the host to a webview as raw ArrayBuffers -
+ * one message per access unit - and owns the single rule that governs every gap
+ * in that stream: once anything is dropped, nothing is forwarded until a
+ * keyframe arrives.
  *
- * Both the sidebar view and the floating panel used to carry their own copy of
- * this logic. They now differ only in `isDeliverable`.
+ * There is deliberately no batching. `sendFrameMeta: true` already delivers
+ * exactly one access unit per packet, so a batch window could only add latency
+ * and merge access units that the decoder must see separately.
+ *
+ * Both the sidebar view and the floating panel own one instance and differ only
+ * in `isDeliverable`.
  */
 export class VideoFrameForwarder {
     private readonly options: VideoFrameForwarderOptions;
 
-    private buffer: Buffer[] = [];
-    private bufferSize = 0;
-    private timer: NodeJS.Timeout | null = null;
+    /** Last SPS+PPS blob seen, prepended to every keyframe. */
+    private lastConfig: Uint8Array | null = null;
 
     private saturated = false;
-    /** Set by any gap. Cleared only by a configuration or keyframe packet. */
+    /** Set by any gap. Cleared only by a keyframe. */
     private dropUntilKeyframe = false;
 
     private stats: VideoFrameForwarderStats = {
@@ -59,18 +60,29 @@ export class VideoFrameForwarder {
         this.options = options;
     }
 
-    /** Bound so it can be handed straight to `ScrcpyServiceEvents.onVideoData`. */
-    handlePacket = (packet: VideoPacket): void => {
+    /** Bound so it can be handed straight to `ScrcpyServiceEvents.onVideoPacket`. */
+    handlePacket = (packet: ScrcpyVideoPacket): void => {
+        // Cached before the deliverable check: a configuration packet that arrives
+        // while the surface is hidden is still the only SPS/PPS this stream will
+        // send, and the keyframe that resumes it has to carry them.
+        if (packet.type === 'config') {
+            this.lastConfig = packet.data;
+        }
+
         if (!this.options.isDeliverable()) {
             this.stats.droppedHidden++;
             // Mark the gap once, on the packet that opens it. Resyncing here would
             // post a reset nobody reads and burn a keyframe request that would itself
             // be dropped; the reveal handler calls resync() at the moment it can
             // actually be used.
-            if (!this.dropUntilKeyframe) {
-                this.dropUntilKeyframe = true;
-                this.dropBuffered();
-            }
+            this.dropUntilKeyframe = true;
+            return;
+        }
+
+        if (packet.type === 'config') {
+            // Posted as a fresh copy: postMessage may transfer the buffer, which
+            // would detach the cached one.
+            this.options.postMessage({ type: 'video-config', data: copyToBuffer(packet.data) });
             return;
         }
 
@@ -87,26 +99,13 @@ export class VideoFrameForwarder {
             this.dropUntilKeyframe = false;
         }
 
-        if (this.bufferSize + packet.data.length > MAX_BUFFER_BYTES) {
-            // The old path cleared the buffer here and kept forwarding, which could
-            // discard SPS/PPS/IDR and leave the decoder corrupt until the next
-            // scheduled keyframe (~10s on the scrcpy server default).
-            this.options.onWarn?.(
-                `Video buffer exceeded ${MAX_BUFFER_BYTES} bytes, resyncing the stream`
-            );
-            this.dropAndResync();
-            return;
-        }
-
-        this.buffer.push(packet.data);
-        this.bufferSize += packet.data.length;
-
-        if (!this.timer) {
-            this.timer = setTimeout(() => {
-                this.timer = null;
-                this.flush();
-            }, BATCH_INTERVAL_MS);
-        }
+        this.stats.forwarded++;
+        this.options.postMessage({
+            type: 'video',
+            k: packet.keyframe ? 1 : 0,
+            pts: packet.pts,
+            data: packet.keyframe ? this.withConfig(packet.data) : exactBuffer(packet.data),
+        });
     };
 
     /**
@@ -124,17 +123,16 @@ export class VideoFrameForwarder {
     }
 
     /**
-     * Recovers the webview decoder after a gap in the forwarded stream. Anything
-     * still buffered belongs to the old GOP.
+     * Recovers the webview decoder after a gap in the forwarded stream.
      *
      * The decoder survives a gap holding references to frames it never received,
      * so resuming mid-GOP shows corruption, or errors the decoder outright, until
-     * the next scheduled keyframe. Clearing it makes it ignore everything until it
+     * the next scheduled keyframe. Resetting it makes it ignore everything until it
      * sees SPS/PPS/IDR again, and the keyframe request makes that arrive in
-     * milliseconds rather than seconds.
+     * milliseconds rather than seconds - immediately usable, because the keyframe
+     * carries its own configuration.
      */
     resync(): void {
-        this.dropBuffered();
         this.dropUntilKeyframe = true;
 
         // Ordering matters: the reset must reach the webview before the new frames do
@@ -144,9 +142,9 @@ export class VideoFrameForwarder {
 
     /** Full teardown, for stop and dispose. */
     reset(): void {
-        this.dropBuffered();
         this.dropUntilKeyframe = false;
         this.saturated = false;
+        this.lastConfig = null;
     }
 
     getStats(): VideoFrameForwarderStats {
@@ -160,42 +158,57 @@ export class VideoFrameForwarder {
         this.resync();
     }
 
-    private dropBuffered(): void {
-        if (this.timer) {
-            clearTimeout(this.timer);
-            this.timer = null;
-        }
-        this.buffer = [];
-        this.bufferSize = 0;
-    }
-
-    private flush(): void {
-        if (this.buffer.length === 0) {
-            return;
+    /**
+     * Prepends SPS+PPS so every keyframe is self-sufficient. That lets the webview
+     * configure or recover from any keyframe rather than from the one `video-config`
+     * message, whose loss would otherwise mean a permanently black screen - and it
+     * replaces the per-keyframe access-unit rebuild the webview used to do.
+     */
+    private withConfig(frame: Uint8Array): ArrayBufferLike {
+        const config = this.lastConfig;
+        if (!config) {
+            return exactBuffer(frame);
         }
 
-        const combined = Buffer.concat(this.buffer);
-        this.buffer = [];
-        this.bufferSize = 0;
-        this.stats.forwarded++;
-
-        // base64 is ~33% larger than the raw bytes but avoids the far larger cost of
-        // JSON-serializing a byte array.
-        this.options.postMessage({ type: 'video', data: combined.toString('base64') });
+        const combined = new Uint8Array(config.length + frame.length);
+        combined.set(config, 0);
+        combined.set(frame, config.length);
+        return combined.buffer;
     }
 
     /**
      * A dropped stream may only resume at a point the decoder can start from.
-     * The stream flags are authoritative when present; the NAL scan is a backstop
+     * The stream flag is authoritative when present; the NAL scan is a backstop
      * for servers that do not flag keyframes, and only runs while dropping.
      */
-    private isResumePoint(packet: VideoPacket): boolean {
-        return packet.isConfiguration || packet.isKeyframe || containsKeyframeNal(packet.data);
+    private isResumePoint(packet: { data: Uint8Array; keyframe: boolean }): boolean {
+        return packet.keyframe || containsKeyframeNal(packet.data);
     }
 }
 
-/** True if the Annex-B payload contains an SPS (type 7) or IDR (type 5) NAL unit. */
-function containsKeyframeNal(data: Buffer): boolean {
+/**
+ * The underlying ArrayBuffer, when it holds exactly this view and nothing else.
+ *
+ * VS Code's postMessage transfers an ArrayBuffer efficiently rather than cloning
+ * it, but it transfers the whole buffer - so a view into a larger slab would ship
+ * the slab. ScrcpyService allocates each packet standalone, making this the
+ * zero-copy path; the copy is a correctness fallback, not the expected case.
+ */
+function exactBuffer(data: Uint8Array): ArrayBufferLike {
+    if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) {
+        return data.buffer;
+    }
+    return copyToBuffer(data);
+}
+
+function copyToBuffer(data: Uint8Array): ArrayBufferLike {
+    const copy = new Uint8Array(data.length);
+    copy.set(data);
+    return copy.buffer;
+}
+
+/** True if the Annex-B payload contains an SPS or IDR NAL unit. */
+function containsKeyframeNal(data: Uint8Array): boolean {
     for (let i = 0; i + 3 < data.length; i++) {
         if (data[i] !== 0x00 || data[i + 1] !== 0x00) {
             continue;
@@ -215,7 +228,7 @@ function containsKeyframeNal(data: Buffer): boolean {
         }
 
         const nalType = data[headerIndex] & 0x1f;
-        if (nalType === 5 || nalType === 7) {
+        if (nalType === NAL_IDR || nalType === NAL_SPS) {
             return true;
         }
         i = headerIndex;

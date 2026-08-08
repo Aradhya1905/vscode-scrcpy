@@ -66,10 +66,9 @@ export class ScrcpyPanel {
         this._videoForwarder = new VideoFrameForwarder({
             postMessage: (message) => this._panel.webview.postMessage(message),
             // Nothing can be rendered while the tab is in the background, so the packet
-            // is dropped before the copy, the concat and the base64.
+            // is dropped before it is posted.
             isDeliverable: () => this._isPanelVisible,
             requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
-            onWarn: (message) => console.warn(message),
         });
 
         // Initialize DeviceManager
@@ -340,7 +339,7 @@ export class ScrcpyPanel {
 
         this._scrcpyService = new ScrcpyService(
             {
-                onVideoData: this._videoForwarder.handlePacket,
+                onVideoPacket: this._videoForwarder.handlePacket,
                 onError: (error) => {
                     vscode.window.showErrorMessage(`Scrcpy Error: ${error}`);
                     this._panel.webview.postMessage({
