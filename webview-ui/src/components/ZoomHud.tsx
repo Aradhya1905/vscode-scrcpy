@@ -37,7 +37,9 @@ export const ZoomHud = memo(function ZoomHud({
             onFocus={onHoldVisible}
             onBlur={onReleaseVisible}
         >
-            <span className="zoom-hud-level">{percentage}%</span>
+            <span className="zoom-hud-level" title="Alt + drag (or middle-drag) to pan">
+                {percentage}%
+            </span>
 
             <div className="zoom-hud-actions">
                 <button

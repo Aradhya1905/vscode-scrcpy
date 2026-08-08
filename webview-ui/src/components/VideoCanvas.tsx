@@ -36,9 +36,9 @@ interface VideoCanvasProps {
     touchEnabled?: boolean;
     /** Ctrl (or Ctrl+Shift) + wheel: 1 = zoom in, -1 = zoom out */
     onZoomWheel?: (direction: 1 | -1, clientX: number, clientY: number) => void;
-    /** Middle-mouse drag delta, in viewport pixels */
+    /** Pan drag delta, in viewport pixels (Alt+left drag or middle drag) */
     onPan?: (deltaX: number, deltaY: number) => void;
-    /** Fired when a middle-drag pan starts/ends, so the parent can update the cursor */
+    /** Fired when a pan drag starts/ends, so the parent can update the cursor */
     onPanStateChange?: (isPanning: boolean) => void;
 }
 
@@ -67,7 +67,7 @@ export const VideoCanvas = memo(
         const isPointerDownRef = useRef(false);
         const lastPointerPosRef = useRef({ x: 0, y: 0 });
 
-        // Middle-mouse drag panning (only relevant while zoomed in)
+        // Drag panning - Alt+left or middle button (only useful while zoomed in)
         const isPanningRef = useRef(false);
         const lastPanPosRef = useRef({ x: 0, y: 0 });
 
@@ -325,8 +325,11 @@ export const VideoCanvas = memo(
             (event: React.PointerEvent) => {
                 if (!isConnected) return;
 
-                // Middle button pans the zoomed view instead of touching the device
-                if (event.button === 1) {
+                // Alt+left and middle button both pan the zoomed view instead of
+                // touching the device. Alt is the discoverable one; middle stays for
+                // mice. Alt is not forwarded as a modifier here - key events carry
+                // their own metaState, so the device never sees a stray Alt press.
+                if (event.button === 1 || (event.button === 0 && event.altKey)) {
                     if (!onPan) return;
                     event.preventDefault();
                     isPanningRef.current = true;

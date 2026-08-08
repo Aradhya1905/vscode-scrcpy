@@ -19,6 +19,8 @@ export default function MirrorApp() {
     // Remount key for the canvas - only the device skin toggle should remount it
     const [deviceSkinKey, setDeviceSkinKey] = useState(0);
     const [isPanning, setIsPanning] = useState(false);
+    // Alt held while zoomed in: pan is one click away, so show the grab cursor
+    const [isPanReady, setIsPanReady] = useState(false);
 
     // Imperative handle on the canvas. Zoom/pan invalidate its rect cache through
     // this instead of through a changing prop, so the transform never re-renders
@@ -69,6 +71,28 @@ export default function MirrorApp() {
         },
         [setPanActive]
     );
+
+    // Alt is the pan modifier, so hint it with a grab cursor while it is held.
+    // Only armed above 100%, where the pan clamp actually allows travel; below
+    // that the listeners are not even attached. Auto-repeat keydowns set the
+    // same value, which React bails out of without rendering.
+    useEffect(() => {
+        if (zoom <= 1) {
+            setIsPanReady(false);
+            return;
+        }
+        const syncAlt = (event: KeyboardEvent) => setIsPanReady(event.altKey);
+        const clearAlt = () => setIsPanReady(false);
+
+        window.addEventListener('keydown', syncAlt);
+        window.addEventListener('keyup', syncAlt);
+        window.addEventListener('blur', clearAlt);
+        return () => {
+            window.removeEventListener('keydown', syncAlt);
+            window.removeEventListener('keyup', syncAlt);
+            window.removeEventListener('blur', clearAlt);
+        };
+    }, [zoom]);
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
@@ -473,7 +497,7 @@ export default function MirrorApp() {
                 ref={viewportRef}
                 className={`video-container ${
                     !showDeviceSkin && isConnected ? 'no-device-skin' : ''
-                } ${isPanning ? 'panning' : ''}`}
+                } ${isPanning ? 'panning' : ''} ${isPanReady && !isPanning ? 'pan-ready' : ''}`}
             >
                 {isConnected ? (
                     <>

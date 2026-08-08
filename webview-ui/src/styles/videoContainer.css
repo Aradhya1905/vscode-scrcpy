@@ -67,6 +67,12 @@
   cursor: grabbing;
 }
 
+/* Alt held while zoomed in - the next left-drag pans instead of touching */
+.video-container.pan-ready,
+.video-container.pan-ready .video-canvas {
+  cursor: grab;
+}
+
 /* ===== ACTIVE SCREEN (Video Canvas) ===== */
 .active-screen {
   position: absolute;
