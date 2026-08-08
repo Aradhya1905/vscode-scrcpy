@@ -1,7 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { Toolbar, VideoCanvas, Placeholder, PhoneFrame, ZoomHud } from '../components';
-import { useVSCodeMessages, useVideoDecoder, useSettingsStorage, useZoom } from '../hooks';
+import {
+    useVSCodeMessages,
+    useVideoDecoder,
+    useSettingsStorage,
+    useZoom,
+    useFitScale,
+} from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
 
 export default function MirrorApp() {
@@ -27,6 +33,9 @@ export default function MirrorApp() {
         [updateSetting]
     );
 
+    // Fit-to-panel factor for the device skin, read by the zoom hook's pan clamping
+    const fitScaleRef = useRef(1);
+
     const {
         zoom,
         panX,
@@ -45,7 +54,17 @@ export default function MirrorApp() {
         initialZoom: settings.zoom,
         isSettingsLoaded: isLoaded,
         onZoomChange: handleZoomPersist,
+        baseScaleRef: fitScaleRef,
     });
+
+    // The skinned frame has a fixed pixel size, so shrink it to fit narrow panels.
+    // Skinless mirroring already stretches to the container and must stay at 1.
+    const { scale: fitScale } = useFitScale<HTMLDivElement>({
+        elementRef: contentRef,
+        containerRef: viewportRef,
+        enabled: status === 'connected' && showDeviceSkin,
+    });
+    fitScaleRef.current = fitScale;
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
@@ -346,7 +365,7 @@ export default function MirrorApp() {
     // down the canvas the decoder is drawing into.
     useEffect(() => {
         setCanvasCacheKey((prev) => prev + 1);
-    }, [showDeviceSkin, zoom, panX, panY]);
+    }, [showDeviceSkin, zoom, panX, panY, fitScale]);
 
     // Surface the zoom HUD briefly once the stream comes up, so it's discoverable
     useEffect(() => {
@@ -395,7 +414,7 @@ export default function MirrorApp() {
                             ref={contentRef}
                             className="zoom-content"
                             style={{
-                                transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                                transform: `translate(${panX}px, ${panY}px) scale(${zoom * fitScale})`,
                             }}
                         >
                             {showDeviceSkin ? (

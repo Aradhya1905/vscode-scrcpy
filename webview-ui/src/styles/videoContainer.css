@@ -47,12 +47,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Flex must not squash the skinned frame: useFitScale needs its natural
+     layout size to compute the fit factor baked into the transform below. */
+  flex: 0 0 auto;
   transform-origin: center center;
   will-change: transform;
   transition: transform 0.12s ease-out;
 }
 
 .video-container.no-device-skin .zoom-content {
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
 }
