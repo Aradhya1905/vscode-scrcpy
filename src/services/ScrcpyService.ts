@@ -448,6 +448,24 @@ export class ScrcpyService {
         }
     }
 
+    /**
+     * Asks the device to emit a keyframe immediately instead of waiting for the
+     * next scheduled one. Used to resync the webview decoder after a gap in the
+     * forwarded video stream.
+     */
+    requestKeyFrame(): void {
+        if (!this.controller) {
+            console.warn('Controller not connected');
+            return;
+        }
+
+        try {
+            this.controller.resetVideo().catch(console.error);
+        } catch (error) {
+            console.error('Error requesting key frame:', error);
+        }
+    }
+
     stop(): void {
         this.isRunning = false;
         this.currentDeviceId = null;
