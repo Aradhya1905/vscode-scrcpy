@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Terminal } from 'lucide-react';
-import { DeviceSelector } from '../components';
+// Imported by path, not through the barrel: the barrel drags Toolbar, VideoCanvas
+// and the rest into this view's chunk and undoes the code split.
+import { DeviceSelector } from '../components/DeviceSelector';
 import { useVSCodeMessages } from '../hooks';
 import type {
     AppProcess,
@@ -12,6 +14,8 @@ import type {
     ShellCommandResult,
 } from '../types';
 import { LogsPanel } from '../components/logs/LogsPanel';
+import '../styles/logs.css';
+import '../styles/shellLogs.css';
 
 function toDate(value: unknown): Date {
     if (value instanceof Date) return value;

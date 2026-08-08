@@ -3,6 +3,13 @@ import { Toolbar, VideoCanvas, Placeholder, PhoneFrame, ZoomHud } from '../compo
 import type { VideoCanvasHandle } from '../components';
 import { useVSCodeMessages, useVideoDecoder, useSettingsStorage, useZoom } from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
+import '../styles/toolbar.css';
+import '../styles/settingsPanel.css';
+import '../styles/videoContainer.css';
+import '../styles/zoomHud.css';
+import '../styles/phoneFrame.css';
+import '../styles/deviceFrames.css';
+import '../styles/placeholder.css';
 
 export default function MirrorApp() {
     const [status, setStatus] = useState<ConnectionStatus>('disconnected');

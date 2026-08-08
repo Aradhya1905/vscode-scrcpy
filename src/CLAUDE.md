@@ -277,6 +277,30 @@ rg -n "vscode\.commands\.register" src/
 
 ## Common Gotchas
 
+### Nothing Heavy at Activation
+
+`extension.ts` statically imports one thing: `ScrcpySidebarView`. Panels are loaded
+inside their command handler, and `ScrcpyService` inside `_startStreaming()` on both
+surfaces:
+
+```typescript
+// Type-only - erased, so it costs nothing at require() time.
+import type { ScrcpyService } from '../services/ScrcpyService';
+
+// ...in _startStreaming(), once the user actually asks to mirror:
+const { ScrcpyService } = await import('../services/ScrcpyService');
+```
+
+`ScrcpyService` is the only consumer of `@yume-chan/*`, which is ~63% of the bundle,
+so a static import anywhere on the activation path parses and evaluates all of it
+before the sidebar can paint. Two rules follow: never import `ScrcpyService` for its
+value outside `_startStreaming`, and never add a top-level `import` of a panel to
+`extension.ts` - `require()`/`await import()` inside the handler is what keeps the
+module lazy through esbuild's CJS output.
+
+Activation itself is `onView:scrcpySidebar` only. VS Code >= 1.74 derives command
+activation from `contributes.commands`, so `onCommand:*` entries are redundant.
+
 ### ADB Server Connection
 
 The extension connects to the local ADB server on port 5037:

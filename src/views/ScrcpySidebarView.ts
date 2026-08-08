@@ -2,15 +2,15 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { ScrcpyService } from '../services/ScrcpyService';
+// Type-only: ScrcpyService drags in the @yume-chan protocol stack, ~63% of the
+// bundle, and is loaded on demand in _startStreaming() instead of at activation.
+import type { ScrcpyService } from '../services/ScrcpyService';
 import { VideoFrameForwarder } from '../services/VideoFrameForwarder';
 import { DeviceInfoService } from '../services/DeviceInfoService';
 import { DeviceManager } from '../services/DeviceManager';
 import { AppManager } from '../services/AppManager';
 import { AdbShellService } from '../services/AdbShellService';
 import { installApks } from '../services/ApkInstaller';
-import { FileManagerPanel } from '../panels/FileManagerPanel';
-import { ShellLogsPanel } from '../panels/ShellLogsPanel';
 
 export class ScrcpySidebarView {
     public static currentView: ScrcpySidebarView | undefined;
@@ -159,8 +159,6 @@ export class ScrcpySidebarView {
                         this._wasStreamingBeforeHidden
                     ) {
                         this._wasStreamingBeforeHidden = false;
-                        // Small delay to let ADB settle after previous stop
-                        await new Promise((resolve) => setTimeout(resolve, 500));
                         try {
                             await this._startStreaming();
                         } catch (error) {
@@ -259,16 +257,23 @@ export class ScrcpySidebarView {
                     case 'install-apk':
                         await this._handleInstallApk(message.files);
                         break;
-                    case 'open-file-manager':
+                    // Panels are required lazily so opening the sidebar does not also
+                    // parse and evaluate three panels the user may never open.
+                    case 'open-file-manager': {
+                        const { FileManagerPanel } = require('../panels/FileManagerPanel');
                         FileManagerPanel.createOrShow(this._context);
                         break;
-                    case 'open-shell-logs':
+                    }
+                    case 'open-shell-logs': {
+                        const { ShellLogsPanel } = require('../panels/ShellLogsPanel');
                         ShellLogsPanel.createOrShow(this._context);
                         break;
-                    case 'open-logcat':
+                    }
+                    case 'open-logcat': {
                         const { LogcatPanel } = require('../panels/LogcatPanel');
                         LogcatPanel.createOrShow(this._context);
                         break;
+                    }
                     case 'volume-up':
                         await this._handleVolumeUp();
                         break;
@@ -416,6 +421,10 @@ export class ScrcpySidebarView {
 
         // Get preferred device or first available
         const deviceId = (await this._deviceManager?.getPreferredDevice()) || null;
+
+        // First mirror start of the session pays for loading the protocol stack;
+        // activation does not.
+        const { ScrcpyService } = await import('../services/ScrcpyService');
 
         this._scrcpyService = new ScrcpyService(
             {

@@ -5,19 +5,34 @@ out/**
 src/**
 webview-ui/**
 scripts/**
+docs/**
 .git/**
 .claude/**
 .cursor/**
+.impeccable/**
 .gitignore
-vscode-scrcpy-*.vsix
-**/tsconfig.json
-**/*.map
-**/*.ts
-!dist/**
-dist/*.map
-dist/**/*.map
-!media/build/**
-media/webview.js
 .prettierignore
 eslint.config.js
 esbuild.js
+vscode-scrcpy-*.vsix
+**/tsconfig.json
+**/*.ts
+**/CLAUDE.md
+
+# Source maps never ship. A "!dist/**" re-include used to sit above this line and
+# un-ignored them again, which is how an 894 KB dist/extension.js.map ended up in
+# the 1.1.1 package. Do not reintroduce a dist negation.
+**/*.map
+
+# esbuild bundle analysis - build-time only.
+dist/*.meta.json
+
+# The README serves its screenshots from raw.githubusercontent.com, so only the
+# extension icon (images/icon.png) needs to be in the package.
+images/*.jpg
+
+# Stale pre-Vite artifact; the real bundle is media/build/webview.js.
+media/webview.js
+
+# Vite's own entry document. The webviews are served media/webview.html instead.
+media/build/index.html

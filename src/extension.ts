@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
-import { ScrcpyPanel } from './panels/ScrcpyPanel';
 import { ScrcpySidebarView } from './views/ScrcpySidebarView';
-import { FileManagerPanel } from './panels/FileManagerPanel';
-import { ShellLogsPanel } from './panels/ShellLogsPanel';
-import { LogcatPanel } from './panels/LogcatPanel';
+
+// Only the sidebar view provider has to exist at activation. Every panel is loaded
+// on first use instead: the mirror panel reaches ScrcpyService and through it the
+// @yume-chan protocol stack, which is ~63% of the bundle and pure parse+eval cost
+// for a session that never opens a panel.
+let scrcpyPanelModule: typeof import('./panels/ScrcpyPanel') | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
     // Register sidebar view provider
@@ -33,32 +35,44 @@ export function activate(context: vscode.ExtensionContext) {
         { webviewOptions: { retainContextWhenHidden: true } }
     );
 
+    async function loadScrcpyPanel() {
+        scrcpyPanelModule ??= await import('./panels/ScrcpyPanel');
+        return scrcpyPanelModule.ScrcpyPanel;
+    }
+
     // Keep legacy commands for backward compatibility
-    const startCommand = vscode.commands.registerCommand('vscode-scrcpy.startMirror', () => {
-        ScrcpyPanel.createOrShow(context);
+    const startCommand = vscode.commands.registerCommand('vscode-scrcpy.startMirror', async () => {
+        (await loadScrcpyPanel()).createOrShow(context);
     });
 
     const stopCommand = vscode.commands.registerCommand('vscode-scrcpy.stopMirror', () => {
-        ScrcpyPanel.kill();
+        // Nothing to kill if the panel module was never loaded.
+        scrcpyPanelModule?.ScrcpyPanel.kill();
     });
 
     const openFileManagerCommand = vscode.commands.registerCommand(
         'vscode-scrcpy.openFileManager',
-        () => {
+        async () => {
+            const { FileManagerPanel } = await import('./panels/FileManagerPanel');
             FileManagerPanel.createOrShow(context);
         }
     );
 
     const openShellLogsCommand = vscode.commands.registerCommand(
         'vscode-scrcpy.openShellLogs',
-        () => {
+        async () => {
+            const { ShellLogsPanel } = await import('./panels/ShellLogsPanel');
             ShellLogsPanel.createOrShow(context);
         }
     );
 
-    const openLogcatCommand = vscode.commands.registerCommand('vscode-scrcpy.openLogcat', () => {
-        LogcatPanel.createOrShow(context);
-    });
+    const openLogcatCommand = vscode.commands.registerCommand(
+        'vscode-scrcpy.openLogcat',
+        async () => {
+            const { LogcatPanel } = await import('./panels/LogcatPanel');
+            LogcatPanel.createOrShow(context);
+        }
+    );
 
     context.subscriptions.push(
         sidebarViewProvider,
@@ -71,5 +85,5 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-    ScrcpyPanel.kill();
+    scrcpyPanelModule?.ScrcpyPanel.kill();
 }

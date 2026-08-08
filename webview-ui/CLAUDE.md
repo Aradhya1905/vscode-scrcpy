@@ -513,26 +513,55 @@ useEffect(() => {
 
 ## Vite Build Configuration
 
-Output is built to `../media/build/` for extension to serve:
+Output is built to `../media/build/` for the extension to serve. `media/webview.html`
+links exactly two files by name - `webview.js` and `webview.css` - so those stay
+unhashed; everything else is a hashed chunk under `chunks/`:
 
 ```typescript
 // vite.config.ts
 export default defineConfig({
-    plugins: [react()],
+    base: './',
     build: {
         outDir: '../media/build',
-        emptyOutDir: true,
         rollupOptions: {
             output: {
                 entryFileNames: 'webview.js',
-                assetFileNames: 'webview.[ext]',
+                chunkFileNames: 'chunks/[name]-[hash].js',
+                // Vite names a CSS asset after the chunk that owns it, so the entry's
+                // sheet is "index.css" and every other one is named for its app chunk.
+                assetFileNames: (asset) =>
+                    asset.names?.[0] === 'index.css'
+                        ? 'webview.[ext]'
+                        : 'chunks/[name]-[hash].[ext]',
             },
         },
     },
 });
 ```
 
-The extension serves these files with proper CSP headers.
+### Code splitting
+
+One webview shows one view, chosen by the extension before the bundle loads, so
+`App.tsx` mounts the four apps through `React.lazy` and each becomes its own chunk.
+Three rules keep that split real:
+
+- **Import shared components by path, not through `../components`.** The barrel pulls
+  `Toolbar`, `VideoCanvas` and the rest into whichever chunk touches it, which is
+  exactly what the split is meant to avoid. `import { DeviceSelector } from
+  '../components/DeviceSelector'` - the barrel is for the mirror view, which needs
+  all of it anyway.
+- **`styles/index.css` is core only** (base, buttons, deviceSelector, tooltip). A
+  sheet used by one view is imported by that view's app module so it rides that
+  chunk; Vite injects the `<link>` before executing the chunk.
+- **`base: './'` is load-bearing.** Chunk URLs resolve against the entry's
+  `import.meta.url`, which the extension rewrites to a webview-resource URI under
+  `media/build/`. An absolute base resolves against the webview origin root and 404s.
+
+`media/webview.html` loads the entry with `type="module"` - required for dynamic
+import. That is a cross-origin load (`vscode-webview://` document, `vscode-cdn.net`
+resource), which works because VS Code's webview service worker serves resources
+with `Access-Control-Allow-Origin: *`. The CSP allows the chunks too: `script-src
+{{cspSource}}` covers the whole resource host, not just the files named in the HTML.
 
 ---
 

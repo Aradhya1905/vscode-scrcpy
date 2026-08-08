@@ -2,13 +2,14 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { ScrcpyService } from '../services/ScrcpyService';
+// Type-only: ScrcpyService drags in the @yume-chan protocol stack, ~63% of the
+// bundle, and is loaded on demand in _startStreaming() instead of at require() time.
+import type { ScrcpyService } from '../services/ScrcpyService';
 import { VideoFrameForwarder } from '../services/VideoFrameForwarder';
 import { DeviceInfoService } from '../services/DeviceInfoService';
 import { DeviceManager } from '../services/DeviceManager';
 import { AdbShellService } from '../services/AdbShellService';
 import { installApks } from '../services/ApkInstaller';
-import { FileManagerPanel } from './FileManagerPanel';
 
 export class ScrcpyPanel {
     public static currentPanel: ScrcpyPanel | undefined;
@@ -195,17 +196,23 @@ export class ScrcpyPanel {
                     case 'install-apk':
                         await this._handleInstallApk(message.files);
                         break;
-                    case 'open-file-manager':
+                    // Panels are required lazily so opening the mirror does not also
+                    // parse and evaluate three panels the user may never open.
+                    case 'open-file-manager': {
+                        const { FileManagerPanel } = require('./FileManagerPanel');
                         FileManagerPanel.createOrShow(this._context);
                         break;
-                    case 'open-logcat':
+                    }
+                    case 'open-logcat': {
                         const { LogcatPanel } = require('./LogcatPanel');
                         LogcatPanel.createOrShow(this._context);
                         break;
-                    case 'open-shell-logs':
+                    }
+                    case 'open-shell-logs': {
                         const { ShellLogsPanel } = require('./ShellLogsPanel');
                         ShellLogsPanel.createOrShow(this._context);
                         break;
+                    }
                     case 'volume-up':
                         await this._handleVolumeUp();
                         break;
@@ -345,6 +352,10 @@ export class ScrcpyPanel {
 
         // Get preferred device or first available
         const deviceId = (await this._deviceManager?.getPreferredDevice()) || null;
+
+        // First mirror start of the session pays for loading the protocol stack;
+        // opening the panel does not.
+        const { ScrcpyService } = await import('../services/ScrcpyService');
 
         this._scrcpyService = new ScrcpyService(
             {

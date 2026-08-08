@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle } from 'lucide-react';
-import { DeviceSelector } from '../components';
+// Imported by path, not through the barrel: the barrel drags Toolbar, VideoCanvas
+// and the rest into this view's chunk and undoes the code split.
+import { DeviceSelector } from '../components/DeviceSelector';
 import { useVSCodeMessages } from '../hooks';
 import type { AppProcess, DeviceListItem, ExtensionMessage, LogcatEntry } from '../types';
 import { EnhancedLogsPanel } from '../components/logs/EnhancedLogsPanel';
+import '../styles/logs.css';
 import '../styles/logcat.css';
 
 export default function LogcatApp() {

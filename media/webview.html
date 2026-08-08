@@ -13,6 +13,7 @@
         window.__VSCODE_SCRCPY_INITIAL_STATE__ = {{initialState}};
     </script>
     <div id="root"></div>
-    <script src="{{scriptUri}}"></script>
+    <!-- type="module" is required: the bundle dynamically imports one per-view chunk. -->
+    <script type="module" src="{{scriptUri}}"></script>
 </body>
 </html>
