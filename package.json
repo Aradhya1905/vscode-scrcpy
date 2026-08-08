@@ -87,6 +87,8 @@
     "build": "node ./scripts/build.js",
     "typecheck": "tsc -p ./ --noEmit",
     "compile": "npm run bundle && npm run compile:webview",
+    "dev": "npm run compile && node ./scripts/launch.js",
+    "debug": "npm run compile && node ./scripts/launch.js --debug",
     "compile:extension": "npm run bundle",
     "compile:webview": "cd webview-ui && npm run build",
     "watch": "npm run bundle -- --watch",

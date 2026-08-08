@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
-import { Toolbar, VideoCanvas, Placeholder, PhoneFrame } from '../components';
-import { useVSCodeMessages, useVideoDecoder, useSettingsStorage } from '../hooks';
+import { Toolbar, VideoCanvas, Placeholder, PhoneFrame, ZoomHud } from '../components';
+import { useVSCodeMessages, useVideoDecoder, useSettingsStorage, useZoom } from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
 
 export default function MirrorApp() {
@@ -9,11 +9,42 @@ export default function MirrorApp() {
     const [error, setError] = useState<string | undefined>();
     const [deviceList, setDeviceList] = useState<DeviceListItem[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+    // Remount key for the canvas - only the device skin toggle should remount it
     const [deviceSkinKey, setDeviceSkinKey] = useState(0);
+    // Rect-cache invalidation counter - bumped by anything that moves the canvas
+    const [canvasCacheKey, setCanvasCacheKey] = useState(0);
+    const [isPanning, setIsPanning] = useState(false);
 
     // Load settings from storage
     const { settings, isLoaded, updateSetting, resetSettings } = useSettingsStorage();
     const showDeviceSkin = settings.showDeviceSkin ?? true;
+
+    const handleZoomPersist = useCallback(
+        (value: number) => {
+            updateSetting('zoom', value);
+        },
+        [updateSetting]
+    );
+
+    const {
+        zoom,
+        panX,
+        panY,
+        isHudVisible,
+        viewportRef,
+        contentRef,
+        zoomIn,
+        zoomOut,
+        resetZoom,
+        zoomAtPoint,
+        panBy,
+        showHud,
+        holdHud,
+    } = useZoom({
+        initialZoom: settings.zoom,
+        isSettingsLoaded: isLoaded,
+        onZoomChange: handleZoomPersist,
+    });
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
@@ -282,10 +313,26 @@ export default function MirrorApp() {
         prevDeviceSkinRef.current = showDeviceSkin;
     }, [showDeviceSkin, isConnected, handleStop, handleStart, addLog]);
 
-    // Invalidate canvas cache when device skin changes
+    // Remount the canvas when the device skin changes (video size changes with it)
     useEffect(() => {
         setDeviceSkinKey((prev) => prev + 1);
     }, [showDeviceSkin]);
+
+    // Invalidate the canvas rect cache when the rendered geometry changes.
+    // A CSS transform doesn't trigger the canvas ResizeObserver, so zoom/pan must
+    // invalidate explicitly or touch coordinates would use a stale rect.
+    // NOTE: this must NOT be the remount `key` - remounting mid-pan would tear
+    // down the canvas the decoder is drawing into.
+    useEffect(() => {
+        setCanvasCacheKey((prev) => prev + 1);
+    }, [showDeviceSkin, zoom, panX, panY]);
+
+    // Surface the zoom HUD briefly once the stream comes up, so it's discoverable
+    useEffect(() => {
+        if (isConnected) {
+            showHud();
+        }
+    }, [isConnected, showHud]);
 
     // Update CSS variable for video container background gradient
     useEffect(() => {
@@ -316,49 +363,76 @@ export default function MirrorApp() {
     return (
         <>
             <div
+                ref={viewportRef}
                 className={`video-container ${
                     !showDeviceSkin && isConnected ? 'no-device-skin' : ''
-                }`}
+                } ${isPanning ? 'panning' : ''}`}
             >
                 {isConnected ? (
-                    showDeviceSkin ? (
-                        <PhoneFrame
-                            key={`phone-frame-${settings.deviceSkinColor || 'default'}`}
-                            skinColor={settings.deviceSkinColor}
+                    <>
+                        <div
+                            ref={contentRef}
+                            className="zoom-content"
+                            style={{
+                                transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                            }}
                         >
-                            <div className="mirror-stage">
-                                <VideoCanvas
-                                    key={deviceSkinKey}
-                                    isConnected={isConnected}
-                                    canvasRef={setCanvas}
-                                    getVideoSize={getVideoSize}
-                                    onTouchEvent={handleTouchEvent}
-                                    onScrollEvent={handleScrollEvent}
-                                    onKeyEvent={handleKeyEvent}
-                                    onPasteText={handlePasteText}
-                                    onLog={addLog}
-                                    invalidateCacheKey={deviceSkinKey}
-                                    touchEnabled={settings.touchFeedback !== false}
-                                />
-                            </div>
-                        </PhoneFrame>
-                    ) : (
-                        <div className="mirror-stage">
-                            <VideoCanvas
-                                key={deviceSkinKey}
-                                isConnected={isConnected}
-                                canvasRef={setCanvas}
-                                getVideoSize={getVideoSize}
-                                onTouchEvent={handleTouchEvent}
-                                onScrollEvent={handleScrollEvent}
-                                onKeyEvent={handleKeyEvent}
-                                onPasteText={handlePasteText}
-                                onLog={addLog}
-                                invalidateCacheKey={deviceSkinKey}
-                                touchEnabled={settings.touchFeedback !== false}
-                            />
+                            {showDeviceSkin ? (
+                                <PhoneFrame
+                                    key={`phone-frame-${settings.deviceSkinColor || 'default'}`}
+                                    skinColor={settings.deviceSkinColor}
+                                >
+                                    <div className="mirror-stage">
+                                        <VideoCanvas
+                                            key={deviceSkinKey}
+                                            isConnected={isConnected}
+                                            canvasRef={setCanvas}
+                                            getVideoSize={getVideoSize}
+                                            onTouchEvent={handleTouchEvent}
+                                            onScrollEvent={handleScrollEvent}
+                                            onKeyEvent={handleKeyEvent}
+                                            onPasteText={handlePasteText}
+                                            onLog={addLog}
+                                            invalidateCacheKey={canvasCacheKey}
+                                            touchEnabled={settings.touchFeedback !== false}
+                                            onZoomWheel={zoomAtPoint}
+                                            onPan={panBy}
+                                            onPanStateChange={setIsPanning}
+                                        />
+                                    </div>
+                                </PhoneFrame>
+                            ) : (
+                                <div className="mirror-stage">
+                                    <VideoCanvas
+                                        key={deviceSkinKey}
+                                        isConnected={isConnected}
+                                        canvasRef={setCanvas}
+                                        getVideoSize={getVideoSize}
+                                        onTouchEvent={handleTouchEvent}
+                                        onScrollEvent={handleScrollEvent}
+                                        onKeyEvent={handleKeyEvent}
+                                        onPasteText={handlePasteText}
+                                        onLog={addLog}
+                                        invalidateCacheKey={canvasCacheKey}
+                                        touchEnabled={settings.touchFeedback !== false}
+                                        onZoomWheel={zoomAtPoint}
+                                        onPan={panBy}
+                                        onPanStateChange={setIsPanning}
+                                    />
+                                </div>
+                            )}
                         </div>
-                    )
+                        <ZoomHud
+                            zoom={zoom}
+                            isVisible={isHudVisible}
+                            isPanned={panX !== 0 || panY !== 0}
+                            onZoomIn={zoomIn}
+                            onZoomOut={zoomOut}
+                            onReset={resetZoom}
+                            onHoldVisible={holdHud}
+                            onReleaseVisible={showHud}
+                        />
+                    </>
                 ) : (
                     <Placeholder
                         error={error}
@@ -404,7 +478,10 @@ export default function MirrorApp() {
                 onBitrateChange={(value) => updateSetting('bitrate', value)}
                 cursorStyle={settings.cursorStyle}
                 onCursorStyleChange={(value) => updateSetting('cursorStyle', value)}
-                onResetSettings={resetSettings}
+                onResetSettings={() => {
+                    resetSettings();
+                    resetZoom();
+                }}
             />
         </>
     );
