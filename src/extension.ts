@@ -21,9 +21,16 @@ export function activate(context: vscode.ExtensionContext) {
         }
     }
 
+    // retainContextWhenHidden is required by the "Persistent Mirroring" setting: without
+    // it VS Code tears down the webview DOM when the sidebar is hidden, taking the video
+    // decoder and canvas with it, so keeping the stream alive extension-side would be
+    // pointless. webviewOptions are fixed at registration time and there is no API to
+    // toggle them per-setting, so this is on for everyone - the cost is that the webview
+    // stays resident in memory once the sidebar has been opened, even with the setting off.
     const sidebarViewProvider = vscode.window.registerWebviewViewProvider(
         ScrcpySidebarViewProvider.viewType,
-        new ScrcpySidebarViewProvider(context)
+        new ScrcpySidebarViewProvider(context),
+        { webviewOptions: { retainContextWhenHidden: true } }
     );
 
     // Keep legacy commands for backward compatibility

@@ -159,6 +159,7 @@ export type WebviewMessage =
     | { command: 'show-touches'; enabled: boolean }
     | { command: 'stay-awake'; enabled: boolean }
     | { command: 'dark-mode'; enabled: boolean }
+    | { command: 'set-persistent-mirroring'; enabled: boolean }
     | { command: 'pick-apk-files' }
     | { command: 'install-apk'; files?: string[] }
     | { command: 'get-device-info' }
@@ -198,6 +199,7 @@ export type ExtensionMessage =
     | { type: 'connected' }
     | { type: 'disconnected' }
     | { type: 'video'; data: string } // base64 encoded
+    | { type: 'video-reset' } // discard decoder state and resync on the next keyframe
     | { type: 'error'; message: string }
     | { type: 'apk-files-selected'; paths: string[] }
     | { type: 'apk-install-status'; level: 'info' | 'warn' | 'error'; message: string }

@@ -26,11 +26,17 @@ export class ScrcpySidebarView {
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _appManager: AppManager | null = null;
+    private _persistentMirroringEnabled: boolean = false;
     private _wasStreamingBeforeHidden: boolean = false;
+    private _isViewVisible: boolean = true;
     private _adbShellService: AdbShellService;
 
     // Maximum buffer size before dropping frames (2MB)
     private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
+
+    // Mirrors the webview's persistent mirroring setting so the extension knows the
+    // mode before the webview has finished loading its settings and reported in
+    private static readonly PERSISTENT_MIRRORING_KEY = 'scrcpy.persistentMirroring';
 
     public static revive(webviewView: vscode.WebviewView, context: vscode.ExtensionContext) {
         ScrcpySidebarView.currentView = new ScrcpySidebarView(webviewView, context);
@@ -42,6 +48,11 @@ export class ScrcpySidebarView {
         this._context = context;
 
         this._adbShellService = new AdbShellService(context);
+
+        this._persistentMirroringEnabled = context.globalState.get<boolean>(
+            ScrcpySidebarView.PERSISTENT_MIRRORING_KEY,
+            false
+        );
 
         // Configure webview
         this._view.webview.options = {
@@ -111,12 +122,22 @@ export class ScrcpySidebarView {
         // Set initial HTML
         this._view.webview.html = this._getHtmlForWebview();
 
-        // Handle visibility changes
+        // Handle visibility changes with toggleable persistence
         this._view.onDidChangeVisibility(
             async () => {
+                const wasVisible = this._isViewVisible;
+                this._isViewVisible = this._view.visible;
                 if (this._view.visible) {
-                    // If streaming was active before hiding, restart it
-                    if (this._wasStreamingBeforeHidden) {
+                    if (
+                        this._persistentMirroringEnabled &&
+                        !wasVisible &&
+                        this._scrcpyService?.isActive()
+                    ) {
+                        this._resyncVideoStream();
+                    } else if (
+                        !this._persistentMirroringEnabled &&
+                        this._wasStreamingBeforeHidden
+                    ) {
                         this._wasStreamingBeforeHidden = false;
                         // Small delay to let ADB settle after previous stop
                         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -134,16 +155,13 @@ export class ScrcpySidebarView {
                                 message: `Failed to resume streaming: ${errorMessage}`,
                             });
                         }
-                    } else {
-                        // Only refresh device list if not auto-resuming streaming
+                    } else if (!this._scrcpyService?.isActive()) {
+                        // Refresh device list when becoming visible
                         this._deviceManager?.refreshDeviceList();
                     }
-                } else {
-                    // Track if we were streaming before becoming hidden
-                    if (this._scrcpyService?.isActive()) {
-                        this._wasStreamingBeforeHidden = true;
-                        this._stopStreaming();
-                    }
+                } else if (!this._persistentMirroringEnabled && this._scrcpyService?.isActive()) {
+                    this._wasStreamingBeforeHidden = true;
+                    this._stopStreaming();
                 }
             },
             null,
@@ -252,6 +270,15 @@ export class ScrcpySidebarView {
                     case 'paste':
                         await this._handlePaste(message.text);
                         break;
+                    case 'set-persistent-mirroring': {
+                        const enabled = !!message.enabled;
+                        this._persistentMirroringEnabled = enabled;
+                        await this._context.globalState.update(
+                            ScrcpySidebarView.PERSISTENT_MIRRORING_KEY,
+                            enabled
+                        );
+                        break;
+                    }
                 }
             },
             null,
@@ -367,6 +394,11 @@ export class ScrcpySidebarView {
         this._scrcpyService = new ScrcpyService(
             {
                 onVideoData: (data) => {
+                    // In persistent mode, skip hidden-view frame forwarding to save CPU.
+                    if (this._persistentMirroringEnabled && !this._isViewVisible) {
+                        return;
+                    }
+
                     // Buffer video data and send in batches for better performance
                     // Check buffer size limit to prevent unbounded memory growth
                     if (
@@ -855,8 +887,29 @@ export class ScrcpySidebarView {
         }
     }
 
+    /**
+     * Resyncs the webview decoder after a gap in the forwarded video stream.
+     *
+     * In persistent mode frames are skipped while the view is hidden, so the decoder
+     * survives the gap holding references to frames it never received - resuming
+     * mid-GOP would show corruption, or error the decoder outright, until the next
+     * scheduled keyframe (the scrcpy server default is ~10s apart). Clearing the
+     * decoder makes it ignore everything until it sees SPS/PPS/IDR again, and the
+     * keyframe request makes that arrive in milliseconds rather than seconds.
+     */
+    private _resyncVideoStream(): void {
+        // Drop anything buffered from before the gap - it belongs to the old GOP
+        this._videoBuffer = [];
+        this._videoBufferSize = 0;
+
+        // Ordering matters: the reset must reach the webview before the new frames do
+        this._view.webview.postMessage({ type: 'video-reset' });
+        this._scrcpyService?.requestKeyFrame();
+    }
+
     public dispose() {
         ScrcpySidebarView.currentView = undefined;
+        this._isViewVisible = false;
         this._stopStreaming();
         this._deviceInfoService?.dispose();
         this._deviceInfoService = null;

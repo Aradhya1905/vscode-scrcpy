@@ -17,6 +17,7 @@ interface AppSettings {
     bitrate?: string;
     cursorStyle?: 'crosshair' | 'default';
     zoom?: number;
+    persistentMirroring?: boolean;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     bitrate: '8',
     cursorStyle: 'crosshair',
     zoom: DEFAULT_ZOOM,
+    persistentMirroring: false,
 };
 
 const STORAGE_KEY = 'scrcpy-app-settings';

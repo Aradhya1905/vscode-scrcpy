@@ -18,6 +18,7 @@ export default function MirrorApp() {
     // Load settings from storage
     const { settings, isLoaded, updateSetting, resetSettings } = useSettingsStorage();
     const showDeviceSkin = settings.showDeviceSkin ?? true;
+    const persistentMirroring = settings.persistentMirroring ?? false;
 
     const handleZoomPersist = useCallback(
         (value: number) => {
@@ -70,6 +71,14 @@ export default function MirrorApp() {
                     processVideoPacket(message.data);
                 }
                 return; // Early return - video messages don't need state updates
+            }
+
+            // Sent when the extension resumes forwarding after skipping frames. Clearing
+            // the decoder makes it ignore the rest of the interrupted GOP and pick up
+            // cleanly on the keyframe the extension just requested from the device.
+            if (message.type === 'video-reset') {
+                reset();
+                return;
             }
 
             // Use batched updates to prevent multiple re-renders
@@ -133,6 +142,18 @@ export default function MirrorApp() {
     useEffect(() => {
         postMessage({ command: 'get-device-list' });
     }, [postMessage]);
+
+    // Keep extension behavior in sync with toolbar setting.
+    useEffect(() => {
+        if (!isLoaded) {
+            return;
+        }
+
+        postMessage({
+            command: 'set-persistent-mirroring',
+            enabled: persistentMirroring,
+        });
+    }, [isLoaded, persistentMirroring, postMessage]);
 
     const handleSelectDevice = useCallback(
         (deviceId: string) => {
@@ -482,6 +503,10 @@ export default function MirrorApp() {
                     resetSettings();
                     resetZoom();
                 }}
+                persistentMirroring={persistentMirroring}
+                onPersistentMirroringChange={(enabled) =>
+                    updateSetting('persistentMirroring', enabled)
+                }
             />
         </>
     );
