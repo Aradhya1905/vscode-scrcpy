@@ -108,12 +108,16 @@ export default function LogcatApp() {
         }
     }, [selectedDeviceId, logcatRunning, manuallyStopped, handleStartStreaming]);
 
-    const errorCount = useMemo(() => {
-        return logEntries.filter((log) => log.level === 'E' || log.level === 'F').length;
-    }, [logEntries]);
-
-    const warningCount = useMemo(() => {
-        return logEntries.filter((log) => log.level === 'W').length;
+    // One pass, no intermediate arrays - `filter().length` allocated two arrays the
+    // size of the match set on every append just to read their lengths.
+    const { errorCount, warningCount } = useMemo(() => {
+        let errors = 0;
+        let warnings = 0;
+        for (const log of logEntries) {
+            if (log.level === 'E' || log.level === 'F') errors++;
+            else if (log.level === 'W') warnings++;
+        }
+        return { errorCount: errors, warningCount: warnings };
     }, [logEntries]);
 
     return (
