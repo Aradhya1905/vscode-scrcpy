@@ -1,6 +1,4 @@
-import { memo, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
-import { useDismissable } from '../hooks/useDismissable';
-import { EmptyDevices } from './states';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { DeviceListItem } from '../types';
 
 type DropdownPlacement = 'auto' | 'up' | 'down';
@@ -12,21 +10,6 @@ interface DeviceSelectorProps {
     onRefresh: () => void;
     isLoading?: boolean;
     dropdownPlacement?: DropdownPlacement;
-    /**
-     * Replaces the default dot + name trigger content. The mirror view passes
-     * its status chip here so there is one device picker, not two.
-     */
-    triggerContent?: ReactNode;
-    /** Extra class on the trigger button, for callers that restyle it */
-    triggerClassName?: string;
-    /** Accessible name for the trigger; falls back to the device summary */
-    triggerLabel?: string;
-    /**
-     * Controlled open state. Omit to let the component own it; pass it when the
-     * caller has sibling overlays that must not be open at the same time.
-     */
-    isOpen?: boolean;
-    onOpenChange?: (open: boolean) => void;
 }
 
 function statusToDotClass(status: DeviceListItem['status'] | undefined) {
@@ -62,31 +45,9 @@ export const DeviceSelector = memo(function DeviceSelector({
     onRefresh,
     isLoading = false,
     dropdownPlacement = 'auto',
-    triggerContent,
-    triggerClassName,
-    triggerLabel,
-    isOpen: controlledIsOpen,
-    onOpenChange,
 }: DeviceSelectorProps) {
-    const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
-    const isOpen = controlledIsOpen ?? uncontrolledIsOpen;
-    const dropdownId = useId();
-
-    const setOpen = useCallback(
-        (next: boolean) => {
-            if (controlledIsOpen === undefined) {
-                setUncontrolledIsOpen(next);
-            }
-            onOpenChange?.(next);
-        },
-        [controlledIsOpen, onOpenChange]
-    );
-
-    const close = useCallback(() => setOpen(false), [setOpen]);
-    // The ref goes on the wrapper, which holds the trigger as well as the
-    // dropdown - otherwise clicking the trigger to close would immediately
-    // re-open it from the button's own handler.
-    const dropdownRef = useDismissable<HTMLDivElement>(isOpen, close);
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     const selectedDevice = useMemo(
         () => devices.find((d) => d.id === selectedDeviceId),
@@ -97,6 +58,19 @@ export const DeviceSelector = memo(function DeviceSelector({
         if (!isOpen) return;
         onRefresh();
     }, [isOpen, onRefresh]);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+
+        if (isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [isOpen]);
 
     const rootClass =
         dropdownPlacement === 'down'
@@ -112,31 +86,21 @@ export const DeviceSelector = memo(function DeviceSelector({
     return (
         <div className={rootClass} ref={dropdownRef}>
             <button
-                className={`device-selector-btn focus-ring${
-                    triggerClassName ? ` ${triggerClassName}` : ''
-                }`}
-                onClick={() => setOpen(!isOpen)}
+                className="device-selector-btn focus-ring"
+                onClick={() => setIsOpen((v) => !v)}
                 disabled={isLoading}
                 title={buttonTitle}
                 type="button"
-                aria-haspopup="listbox"
-                aria-expanded={isOpen}
-                aria-controls={isOpen ? dropdownId : undefined}
-                aria-label={triggerLabel ?? buttonTitle}
             >
-                {triggerContent ?? (
-                    <span className="device-info">
-                        <span
-                            className={`device-status-dot ${statusToDotClass(
-                                selectedDevice?.status
-                            )}`}
-                            aria-hidden="true"
-                        />
-                        <span className="device-name">
-                            {selectedDevice ? selectedDevice.name : 'Select device'}
-                        </span>
+                <span className="device-info">
+                    <span
+                        className={`device-status-dot ${statusToDotClass(selectedDevice?.status)}`}
+                        aria-hidden="true"
+                    />
+                    <span className="device-name">
+                        {selectedDevice ? selectedDevice.name : 'Select device'}
                     </span>
-                )}
+                </span>
 
                 <svg
                     className={`device-selector-arrow ${isOpen ? 'open' : ''}`}
@@ -158,7 +122,7 @@ export const DeviceSelector = memo(function DeviceSelector({
             </button>
 
             {isOpen && (
-                <div className="device-dropdown" id={dropdownId}>
+                <div className="device-dropdown" role="menu">
                     <div className="device-dropdown-header">
                         <span className="device-dropdown-title">Devices</span>
                         <button
@@ -168,18 +132,22 @@ export const DeviceSelector = memo(function DeviceSelector({
                                 onRefresh();
                             }}
                             title="Refresh device list"
-                            aria-label="Refresh device list"
                             type="button"
                         >
                             Refresh
                         </button>
                     </div>
 
-                    <div className="device-list" role="listbox" aria-label="Devices">
-                        {devices.length === 0 ? (
-                            <EmptyDevices onRescan={onRefresh} />
-                        ) : (
-                            devices.map((device) => {
+                    {devices.length === 0 ? (
+                        <div className="device-dropdown-empty">
+                            <div className="device-dropdown-empty-title">No devices found</div>
+                            <div className="device-dropdown-empty-hint">
+                                Connect an Android device via USB and enable USB debugging.
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="device-list">
+                            {devices.map((device) => {
                                 const isSelected = device.id === selectedDeviceId;
                                 const disabled = device.status !== 'device';
                                 return (
@@ -191,13 +159,12 @@ export const DeviceSelector = memo(function DeviceSelector({
                                         onClick={() => {
                                             if (disabled) return;
                                             onSelectDevice(device.id);
-                                            close();
+                                            setIsOpen(false);
                                         }}
                                         disabled={disabled}
                                         title={`${device.name} • ${statusToLabel(device.status)} • ${device.id}`}
                                         type="button"
-                                        role="option"
-                                        aria-selected={isSelected}
+                                        role="menuitem"
                                     >
                                         <span className="device-item-info">
                                             <span className="device-item-name">{device.name}</span>
@@ -205,9 +172,9 @@ export const DeviceSelector = memo(function DeviceSelector({
                                         </span>
                                     </button>
                                 );
-                            })
-                        )}
-                    </div>
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

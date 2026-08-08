@@ -1,13 +1,11 @@
 export { Toolbar } from './Toolbar';
 export { VideoCanvas } from './VideoCanvas';
 export { Placeholder } from './Placeholder';
-export { IdleState, ConnectingState, ErrorState, EmptyDevices } from './states';
 export { PhoneFrame } from './DeviceFrames';
 export { SettingsPanel } from './SettingsPanel';
 export { MorePanel } from './MorePanel';
 export { DeviceStatus } from './DeviceStatus';
 export { DeviceSelector } from './DeviceSelector';
-export { StatusChip } from './StatusChip';
 export { RecentApps } from './RecentApps';
 export { AppLauncher } from './AppLauncher';
 export { Tooltip } from './Tooltip';

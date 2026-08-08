@@ -7,21 +7,21 @@
   align-items: center;
   gap: 6px;
   padding: 5px 6px 5px 14px;
-  /* Translucent so the blur has something to do, but sourced from the token
-     so the pill follows the theme instead of staying dark on Light+ */
-  background: color-mix(in srgb, var(--surface-overlay) 92%, transparent);
+  background: rgba(22, 27, 34, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--vsc-border);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-3);
+  border-radius: 999px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 30;
 
   /* Hidden state - fades down/out and stops intercepting pointer events */
   opacity: 0;
   pointer-events: none;
   transform: translateX(-50%) translateY(-8px);
-  transition: opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
 }
 
 .zoom-hud.visible {
@@ -32,7 +32,7 @@
 
 .zoom-hud-level {
   min-width: 42px;
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
@@ -58,7 +58,7 @@
   padding: 4px 14px;
   background: transparent;
   border: 1px solid var(--vsc-blue);
-  border-radius: var(--radius-pill);
+  border-radius: 999px;
   color: var(--vsc-blue);
   font-family: inherit;
   font-size: 12px;
@@ -66,11 +66,11 @@
   line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 
 .zoom-hud-reset:hover:not(:disabled) {
-  background: var(--accent-soft);
+  background: rgba(88, 166, 255, 0.15);
 }
 
 .zoom-hud-reset:active:not(:disabled) {

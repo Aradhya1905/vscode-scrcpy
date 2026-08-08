@@ -27,10 +27,32 @@ export const SCROLL_WHEEL_SCALE = 20;
  */
 export const SCROLL_WHEEL_DIVISOR = 2;
 
-/*
- * The video container backdrop used to be declared here and was never imported
- * by anything. It now lives in the token layer as --backdrop-default
- * (webview-ui/src/styles/tokens.css), derived from --accent and --surface so it
- * follows the VS Code theme, and a saved gradientColor1/gradientColor2 pair
- * still overrides it. See docs/changes/06-state-surfaces.md
+/**
+ * Background gradient for the video container.
+ * Change this value to customize the background gradient.
+ * Format: CSS gradient string (radial-gradient, linear-gradient, etc.)
+ *
+ * Examples:
+ * - radial-gradient(circle, rgba(238, 174, 202, 1) 0%, rgba(148, 187, 233, 1) 100%)
+ * - linear-gradient(135deg, #667eea 0%, #764ba2 100%)
+ * - linear-gradient(to right, #f093fb 0%, #f5576c 100%)
  */
+// export const VIDEO_CONTAINER_BACKGROUND_GRADIENT =
+//   "radial-gradient(circle, rgba(238, 174, 202, 1) 0%, rgba(148, 187, 233, 1) 100%)";
+
+/*
+ * Created with https://www.css-gradient.com
+ * Gradient link: https://www.css-gradient.com/?c1=010101&c2=0f0b06&gt=l&gd=dtl
+ * DARK TO LIGHT GRADIENT
+ */
+// export const VIDEO_CONTAINER_BACKGROUND_GRADIENT =
+//   "linear-gradient(315deg, rgba(1, 1, 1, 1.0), rgba(15, 11, 6, 1.0))";
+
+/*
+ * Created with https://www.css-gradient.com
+ * Gradient link: https://www.css-gradient.com/?c1=010101&c2=010101&gt=l&gd=dtl
+ * FULL BLACK GRADIENT
+ */
+
+export const VIDEO_CONTAINER_BACKGROUND_GRADIENT =
+    'linear-gradient(315deg, rgba(1, 1, 1, 1.0), rgba(1, 1, 1, 1.0))';

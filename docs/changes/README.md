@@ -12,30 +12,41 @@ and point back to these documents.
 | # | Change | Detail doc | Plan | Status |
 |---|--------|-----------|------|--------|
 | 01 | Webview fonts (CSP-blocked import) | [01-webview-fonts.md](01-webview-fonts.md) | [`.claude/plans/01-webview-fonts.md`](../../.claude/plans/01-webview-fonts.md) | Done |
-| 02 | Design token layer / theme awareness | [02-design-tokens.md](02-design-tokens.md) | [`.claude/plans/02-design-tokens.md`](../../.claude/plans/02-design-tokens.md) | Done |
+| 02 | Design token layer / theme awareness | [02-design-tokens.md](02-design-tokens.md) | [`.claude/plans/02-design-tokens.md`](../../.claude/plans/02-design-tokens.md) | Reverted |
 | 03 | Pan re-render performance | [03-pan-rerender-perf.md](03-pan-rerender-perf.md) | [`.claude/plans/03-pan-rerender-perf.md`](../../.claude/plans/03-pan-rerender-perf.md) | Done |
-| 04 | Token cleanup / interaction pass | [04-token-cleanup-interaction.md](04-token-cleanup-interaction.md) | [`.claude/plans/04-token-cleanup-interaction.md`](../../.claude/plans/04-token-cleanup-interaction.md) | Done |
-| 05 | Toolbar & status rework | [05-toolbar-status-rework.md](05-toolbar-status-rework.md) | [`.claude/plans/05-toolbar-status-rework.md`](../../.claude/plans/05-toolbar-status-rework.md) | Done |
-| 06 | State surfaces | [06-state-surfaces.md](06-state-surfaces.md) | [`.claude/plans/06-state-surfaces.md`](../../.claude/plans/06-state-surfaces.md) | Done |
-| 07 | Feedback & discoverability | [07-feedback-discoverability.md](07-feedback-discoverability.md) | [`.claude/plans/07-feedback-discoverability.md`](../../.claude/plans/07-feedback-discoverability.md) | Planned |
+| 04 | Token cleanup / interaction pass | [04-token-cleanup-interaction.md](04-token-cleanup-interaction.md) | [`.claude/plans/04-token-cleanup-interaction.md`](../../.claude/plans/04-token-cleanup-interaction.md) | Reverted |
+| 05 | Toolbar & status rework | [05-toolbar-status-rework.md](05-toolbar-status-rework.md) | [`.claude/plans/05-toolbar-status-rework.md`](../../.claude/plans/05-toolbar-status-rework.md) | Reverted |
+| 06 | State surfaces | [06-state-surfaces.md](06-state-surfaces.md) | [`.claude/plans/06-state-surfaces.md`](../../.claude/plans/06-state-surfaces.md) | Reverted |
+| 07 | Feedback & discoverability | [07-feedback-discoverability.md](07-feedback-discoverability.md) | [`.claude/plans/07-feedback-discoverability.md`](../../.claude/plans/07-feedback-discoverability.md) | Dropped |
 
-Changes 04–07 are the UI overhaul that 02 deliberately deferred. 04 finishes the
-token migration and is zero-risk; 05 is where the panel starts to look designed;
-06 makes the pre-stream states honest; 07 is additive polish. Do them in order —
-05 consumes 04's elevation and focus tokens, and 06 reuses the `device-info`
-handling that 05 introduces.
+## Reverted — read this before picking any of it back up
 
-04, 05 and 06 all landed on `feature/token-cleanup-interaction`. Their Outcome
-sections ([04](04-token-cleanup-interaction.md#outcome),
-[05](05-toolbar-status-rework.md#outcome),
-[06](06-state-surfaces.md#outcome)) record what shipped beyond the written
-plans and which of their checks still need a human eye in a running Extension
-Development Host.
+02, 04, 05 and 06 shipped on `feature/token-cleanup-interaction` and were then
+reverted: the redesigned look was not wanted. `webview-ui/src/` is back to its
+state at `cadca79`. 07 was never started and is dropped with them.
 
-07 can now build on 06: the pre-stream surfaces live in
-`webview-ui/src/components/states/`, `.state-action` is the shared quiet button
-for anything added to them, and `connect-progress` / `diagnostic-result` are
-precedents for any further extension → webview status message.
+What the revert removed: `styles/tokens.css` and every stylesheet rewired to it,
+`components/StatusChip.tsx`, `components/states/`, `hooks/useDismissable.ts`,
+the toolbar/`DeviceSelector`/`Placeholder` rewrites, the `onVideoSizeChange`
+callback on `useVideoDecoder`, and the `toolbarPosition` setting (back to the
+`toolbarAtBottom` boolean — anyone who ran a redesign build gets the default
+bottom placement again).
+
+What the revert kept, deliberately: the extension-side work in
+`src/services/AdbShellService.ts`, `src/services/ScrcpyService.ts` and
+`src/views/ScrcpySidebarView.ts`. That is real functionality (connect progress,
+diagnostics), not styling. It still emits `connect-progress` and
+`diagnostic-result`; nothing in the webview consumes them right now, which is
+harmless — unknown message types are ignored.
+
+The detail docs below are left in place as a record of what was tried. Treat
+them as history, not as a plan.
+
+The original sequencing rationale, for reference: 04 finished the token
+migration, 05 was where the panel started to look designed, 06 made the
+pre-stream states honest, 07 was additive polish. 05 consumed 04's elevation and
+focus tokens, and 06 reused the `device-info` handling 05 introduced — so any
+revival has to start at 04.
 
 ## Not yet scheduled
 

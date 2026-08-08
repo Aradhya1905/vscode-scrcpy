@@ -168,7 +168,8 @@
   color: var(--vsc-text);
   padding: 0 10px;
   font-size: 12px;
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 .sl-input:disabled {
@@ -301,7 +302,8 @@
   padding: 8px 10px;
   cursor: pointer;
   font-size: 12px;
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, 'Liberation Mono', 'Courier New', monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -356,7 +358,8 @@
   color: var(--vsc-text);
   font-size: 11px;
   line-height: 1.35;
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, 'Liberation Mono', 'Courier New', monospace;
   overflow: auto;
   max-height: 170px;
 }
@@ -421,7 +424,8 @@
   border: 1px solid rgba(48, 54, 61, 0.6);
   background: rgba(13, 17, 23, 0.25);
   padding: 8px;
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, 'Liberation Mono', 'Courier New', monospace;
   font-size: 11px;
 }
 
@@ -483,7 +487,8 @@
 }
 
 .sl-mono {
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, 'Liberation Mono', 'Courier New', monospace;
   font-size: 11px;
   color: var(--vsc-text);
 }

@@ -1,21 +1,5 @@
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
 
-/**
- * The step a pending connection is on. Reported by the extension as it happens,
- * so the connecting surface can name the stage instead of showing one
- * undifferentiated spinner. See docs/changes/06-state-surfaces.md
- */
-export type ConnectStage = 'pushing-server' | 'starting' | 'awaiting-video';
-
-/** Read-only ADB diagnostics offered from the error surface */
-export type DiagnosticAction = 'check-devices' | 'restart-adb-server';
-
-export interface DiagnosticResult {
-    action: DiagnosticAction;
-    success: boolean;
-    output: string;
-}
-
 export type LogLevel = 'info' | 'warn' | 'error';
 
 export interface LogEntry {
@@ -178,9 +162,6 @@ export type WebviewMessage =
     | { command: 'set-persistent-mirroring'; enabled: boolean }
     | { command: 'pick-apk-files' }
     | { command: 'install-apk'; files?: string[] }
-    | { command: 'check-devices' }
-    | { command: 'restart-adb-server' }
-    | { command: 'open-troubleshooting' }
     | { command: 'get-device-info' }
     | { command: 'get-device-list' }
     | { command: 'select-device'; deviceId: string }
@@ -215,8 +196,6 @@ export type WebviewMessage =
 
 export type ExtensionMessage =
     | { type: 'connecting' }
-    | { type: 'connect-progress'; stage: ConnectStage }
-    | { type: 'diagnostic-result'; action: DiagnosticAction; success: boolean; output: string }
     | { type: 'connected' }
     | { type: 'disconnected' }
     | { type: 'video'; data: string } // base64 encoded

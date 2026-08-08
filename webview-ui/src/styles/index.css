@@ -1,6 +1,3 @@
-/* Design tokens must come first - everything below resolves against them */
-@import './tokens.css';
-
 /* Import base styles first */
 @import './base.css';
 

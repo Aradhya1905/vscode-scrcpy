@@ -1,7 +1,26 @@
-/* Colour, typography, radius, elevation and motion tokens all live in
-   tokens.css, which index.css imports before this file. Fonts come from
-   the host editor: the webview CSP has no font-src, so a remote @import
-   is blocked. See docs/changes/01-webview-fonts.md */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600&display=swap');
+
+/* ===== CSS VARIABLES ===== */
+:root {
+  /* VSCode Theme Colors */
+  --vsc-bg: #0d1117;
+  --vsc-secondary: #161b22;
+  --vsc-tertiary: #1c2128;
+  --vsc-border: #30363d;
+  --vsc-text: #e6edf3;
+  --vsc-text-muted: #8b949e;
+
+  /* Accent Colors */
+  --vsc-blue: #58a6ff;
+  --vsc-green: #3fb950;
+  --vsc-red: #f85149;
+  --vsc-purple: #bc8cff;
+  --vsc-yellow: #d29922;
+
+  /* Phone Frame Size */
+  --phone-width: 290px;
+  --phone-height: 630px;
+}
 
 /* ===== RESET & BASE STYLES ===== */
 * {
@@ -18,13 +37,13 @@ body {
 
 html {
   /* Cursor can show host gutters if the document doesn't paint edge-to-edge */
-  background: var(--surface);
+  background: var(--vsc-bg);
 }
 
 body {
-  background-color: var(--surface);
-  color: var(--text);
-  font-family: var(--font-ui);
+  background-color: var(--vsc-bg);
+  color: var(--vsc-text);
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   display: flex;
   flex-direction: column;
   /* Override any host-injected padding/margins (Cursor sometimes adds side gutters) */
@@ -43,7 +62,7 @@ body {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: var(--surface);
+  background: var(--vsc-bg);
 }
 
 /* ===== CUSTOM SCROLLBAR ===== */
@@ -53,20 +72,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--vsc-bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--vscode-scrollbarSlider-background, var(--border));
-  border-radius: var(--radius-sm);
+  background: var(--vsc-border);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--vscode-scrollbarSlider-hoverBackground, var(--text-muted));
-}
-
-::-webkit-scrollbar-thumb:active {
-  background: var(--vscode-scrollbarSlider-activeBackground, var(--text-muted));
+  background: var(--vsc-text-muted);
 }
 
 /* ===== UTILITY CLASSES ===== */
@@ -94,7 +109,7 @@ input[type="color"] {
   border: none;
   padding: 0;
   background: transparent;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -109,24 +124,13 @@ input[type="color"]::-webkit-color-swatch-wrapper {
 
 input[type="color"]::-webkit-color-swatch {
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
 }
 
-/* ===== FOCUS =====
-   :focus-visible, not :focus, so the ring appears for keyboard navigation
-   and not on mouse clicks. One global rule covers every control - nothing
-   in the sidebar had a focus style before this. */
-:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
-/* Opt-in variant for controls that sit flush against a container edge,
-   where an outline-offset ring would be clipped. */
-.focus-ring:focus-visible {
+/* Focus ring */
+.focus-ring:focus {
   outline: none;
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus-ring);
+  box-shadow: 0 0 0 2px var(--vsc-bg), 0 0 0 4px var(--vsc-blue);
 }
 
 /* ===== SHARED ANIMATIONS ===== */

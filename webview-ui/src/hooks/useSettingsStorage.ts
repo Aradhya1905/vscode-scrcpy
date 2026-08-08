@@ -7,7 +7,7 @@ interface AppSettings {
     gradientColor2?: string;
     deviceSkinColor?: string;
     showDeviceSkin?: boolean;
-    toolbarPosition?: 'top' | 'bottom';
+    toolbarAtBottom?: boolean;
     autoHide?: boolean;
     touchFeedback?: boolean;
     keyMapping?: boolean;
@@ -21,16 +21,11 @@ interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-    // Deliberately unset. With no colour pair the backdrop falls back to
-    // --backdrop-default, which is derived from the active VS Code theme.
-    // Anyone who has picked colours has them stored, so this only changes what
-    // a fresh install (or a settings reset) looks like.
-    // See docs/changes/06-state-surfaces.md
-    gradientColor1: undefined,
-    gradientColor2: undefined,
+    gradientColor1: 'rgba(238, 174, 202, 1)',
+    gradientColor2: 'rgba(148, 187, 233, 1)',
     deviceSkinColor: '#1a1a1a',
     showDeviceSkin: false,
-    toolbarPosition: 'bottom',
+    toolbarAtBottom: true,
     autoHide: false,
     touchFeedback: true,
     keyMapping: false,
@@ -78,14 +73,6 @@ export function useSettingsStorage() {
 
                 // Validate zoom (must be within the supported zoom range)
                 migratedSettings.zoom = clampZoom(migratedSettings.zoom ?? DEFAULT_ZOOM);
-
-                // `toolbarAtBottom` (boolean) predates `toolbarPosition`. Carry
-                // an existing preference over rather than silently resetting it.
-                if (!['top', 'bottom'].includes(migratedSettings.toolbarPosition || '')) {
-                    const legacyAtBottom = (loadedSettings as { toolbarAtBottom?: boolean })
-                        .toolbarAtBottom;
-                    migratedSettings.toolbarPosition = legacyAtBottom === false ? 'top' : 'bottom';
-                }
 
                 setSettings(migratedSettings);
 

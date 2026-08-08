@@ -52,7 +52,7 @@
   border: 1px solid var(--vsc-border);
   border-radius: 10px;
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .logs-app-selector-btn:hover {
@@ -120,7 +120,7 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease);
+  transition: background-color 0.15s ease;
   text-align: left;
 }
 
@@ -161,7 +161,7 @@
   border: 1px solid var(--vsc-border);
   border-radius: 10px;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
   background: rgba(13, 17, 23, 0.35);
 }
 
@@ -198,7 +198,7 @@
   background: rgba(13, 17, 23, 0.35);
   border: 1px solid var(--vsc-border);
   border-radius: 10px;
-  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .logs-search-wrapper:focus-within {
@@ -238,7 +238,7 @@
   border: 1px solid var(--vsc-border);
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -270,7 +270,7 @@
   border: 1px solid var(--vsc-border);
   border-radius: 10px;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
 }
 
 .logs-quick-filter-btn:hover {
@@ -302,7 +302,8 @@
 .logs-stream {
   height: 100%;
   overflow-y: auto;
-  font-family: var(--font-mono);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.45;
 }
@@ -317,7 +318,7 @@
   gap: 10px;
   padding: 6px 12px;
   border-bottom: 1px solid rgba(48, 54, 61, 0.55);
-  transition: background-color var(--dur-fast) var(--ease);
+  transition: background-color 0.1s ease;
 }
 
 .log-entry:hover {
@@ -483,7 +484,7 @@
   border: 1px solid var(--vsc-border);
   border-radius: 10px;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
 }
 
 .logs-status-btn:hover {
@@ -554,7 +555,7 @@
 }
 
 .log-entry-new {
-  animation: log-slide-in var(--dur-fast) var(--ease);
+  animation: log-slide-in 0.15s ease-out;
 }
 
 

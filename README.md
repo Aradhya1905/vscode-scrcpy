@@ -199,9 +199,6 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type:
 
 ## Troubleshooting
 
-The error surface in the panel links here. Its **Check devices** and **Restart adb server**
-buttons run the first two commands below for you.
-
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `unauthorized` next to your device in `adb devices` | The device has not accepted this computer's debugging key | Unlock the device and tap **Allow** on the "Allow USB debugging" prompt. Tick *Always allow from this computer* to make it stick. |

@@ -11,7 +11,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
   white-space: nowrap;
 }
 
@@ -41,7 +41,7 @@
   border-radius: 6px;
   color: var(--vsc-text-muted);
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
 }
 
 .btn-icon:hover:not(:disabled) {
@@ -62,12 +62,9 @@
   color: var(--vsc-blue);
 }
 
-/* No width/height here. Lucide renders size={n} as width/height *attributes*,
-   and a CSS rule beats a presentation attribute - a fixed size here silently
-   flattened every size prop in Toolbar.tsx. Glyph size belongs at the call
-   site; 24px is lucide's own default when no size prop is given. */
 .btn-icon svg {
-  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .btn-primary {
@@ -89,51 +86,4 @@
 .btn-secondary:hover {
   background: var(--vsc-text-muted);
   color: var(--vsc-text);
-}
-
-/* ===== PRIMARY PILL =====
-   Start/Stop. The only filled control in the toolbar - that is the whole
-   point, so nothing else should adopt this class.
-   See docs/changes/05-toolbar-status-rework.md */
-.btn-primary-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  flex: 0 1 auto;
-  min-width: 0;
-  height: 32px;
-  padding: 0 14px;
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-pill);
-  color: var(--text-on-accent);
-  font-size: var(--text-base);
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-  box-shadow: var(--shadow-1);
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.btn-primary-pill svg {
-  flex-shrink: 0;
-}
-
-.btn-primary-pill.is-stop {
-  background: var(--danger);
-}
-
-.btn-primary-pill:hover:not(:disabled) {
-  box-shadow: var(--shadow-2);
-  transform: translateY(-1px);
-}
-
-.btn-primary-pill:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.btn-primary-pill:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
 }

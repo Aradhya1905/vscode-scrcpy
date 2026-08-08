@@ -1,13 +1,4 @@
-/* ===================================================================
-   STATE SURFACES
-   -------------------------------------------------------------------
-   Idle, connecting, error and empty-device-list. Idle and connecting
-   sit inside the phone silhouette; the error card deliberately does
-   not - a phone frame around an error makes it look like device
-   output. See docs/changes/06-state-surfaces.md
-   =================================================================== */
-
-/* ===== IDLE ===== */
+/* ===== PLACEHOLDER STATE ===== */
 .placeholder-state {
   position: absolute;
   inset: 0;
@@ -16,7 +7,7 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: linear-gradient(to bottom, var(--surface-raised), var(--surface));
+  background: linear-gradient(to bottom, var(--vsc-secondary), var(--vsc-bg));
 }
 
 .placeholder-icon-wrapper {
@@ -27,9 +18,9 @@
 .placeholder-icon-bg {
   width: 64px;
   height: 64px;
-  border-radius: var(--radius-lg);
-  background: var(--surface-overlay);
-  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--vsc-tertiary);
+  border: 1px solid var(--vsc-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -41,21 +32,19 @@
   right: -6px;
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-md);
-  background: var(--accent);
-  color: var(--text-on-accent);
+  border-radius: 8px;
+  background: linear-gradient(to bottom right, var(--vsc-purple), var(--vsc-blue));
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   cursor: pointer;
-  box-shadow: var(--shadow-1);
-  transition: box-shadow var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: all 0.2s ease;
 }
 
 .placeholder-play-button:hover {
   transform: scale(1.1);
-  box-shadow: var(--shadow-2);
+  box-shadow: 0 4px 12px rgba(188, 140, 255, 0.4);
 }
 
 .placeholder-play-button:active {
@@ -63,285 +52,136 @@
 }
 
 .placeholder-text {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
+  font-size: 11px;
+  color: var(--vsc-text-muted);
   text-align: center;
+  margin-bottom: 12px;
 }
 
-/* Only rendered when there is something real to report - see IdleState.tsx */
-.placeholder-specs {
-  margin-top: 8px;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  text-align: center;
-  line-height: 1.4;
+.placeholder-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: rgba(139, 148, 158, 0.6);
 }
 
-/* ===== CONNECTING ===== */
-.connect-state {
+/* ===== LOADING STATE ===== */
+.loading-state {
   position: absolute;
   inset: 0;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-}
-
-/* The sweep is a single composited layer animating `transform`. This surface
-   is on screen exactly when the decoder is starting up, so it must not cost a
-   paint per frame. */
-.connect-skeleton {
-  position: relative;
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 24px;
+  background: var(--vsc-bg);
 }
 
-.connect-skeleton::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 60%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, var(--accent) 16%, transparent),
-    transparent
-  );
-  animation: connect-shimmer 1.6s var(--ease) infinite;
-  will-change: transform;
+.loading-spinner {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 12px;
 }
 
-@keyframes connect-shimmer {
+.loading-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.loading-circle {
+  animation:
+    loading-dashoffset 2s ease-in-out infinite,
+    loading-rotate 1s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes loading-dashoffset {
+  0%, 100% {
+    stroke-dashoffset: 100;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes loading-rotate {
   from {
-    transform: translateX(-100%);
+    transform: rotate(0deg);
   }
   to {
-    transform: translateX(266%);
+    transform: rotate(360deg);
   }
 }
 
-.connect-skeleton-bar {
-  height: 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-raised);
+.loading-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.connect-skeleton-bar-lg {
-  width: 72%;
+.loading-text {
+  font-size: 10px;
+  color: var(--vsc-text-muted);
 }
 
-.connect-skeleton-bar-md {
-  width: 54%;
-}
-
-.connect-skeleton-bar-sm {
-  width: 38%;
-}
-
-.connect-status {
+/* ===== ERROR STATE ===== */
+.error-state {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 0 16px 28px;
-  text-align: center;
-}
-
-.connect-stage {
-  font-size: var(--text-sm);
-  color: var(--text);
-}
-
-.connect-stall {
-  font-size: var(--text-xs);
-  color: var(--warning);
-}
-
-/* ===== ERROR CARD ===== */
-.error-card {
-  width: 100%;
-  max-width: 420px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  justify-content: center;
   padding: 16px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-2);
+  background: var(--vsc-bg);
 }
 
-.error-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.error-card-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
+.error-icon {
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-}
-
-.error-card-title {
-  font-size: var(--text-md);
-  font-weight: 650;
-  color: var(--text);
-}
-
-.error-card-hint {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  line-height: 1.45;
-}
-
-/* Selectable, wrapped and monospaced: the raw text is often the only thing
-   that identifies the failure, so it has to be readable and copyable. */
-.error-card-raw {
-  margin: 0;
-  padding: 8px 10px;
-  max-height: 160px;
-  overflow: auto;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 1.45;
-  color: var(--text-muted);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  user-select: text;
-}
-
-.error-card-raw-failed {
-  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
-}
-
-.error-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.error-card-diagnostic {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 4px;
-  border-top: 1px solid var(--border);
-}
-
-.error-card-diagnostic-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
-}
-
-/* ===== EMPTY DEVICE LIST ===== */
-.empty-devices {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 14px 12px;
-}
-
-.empty-devices-glyph {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  margin-bottom: 2px;
-  border-radius: var(--radius-md);
-  background: var(--surface-overlay);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
+  margin-bottom: 12px;
+  color: var(--vsc-red);
 }
 
-.empty-devices-title {
-  font-size: var(--text-base);
-  font-weight: 650;
-  color: var(--text);
+.error-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vsc-text);
+  margin-bottom: 4px;
 }
 
-.empty-devices-hint {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  line-height: 1.4;
+.error-message {
+  font-size: 9px;
+  color: var(--vsc-text-muted);
+  text-align: center;
+  margin-bottom: 12px;
 }
 
-/* ===== SHARED ACTION BUTTON =====
-   Quiet by default - the error card's Retry is the only one that reads as
-   primary, and nothing here competes with the toolbar's start/stop pill. */
-.state-action {
-  display: inline-flex;
+.error-retry-btn {
+  display: flex;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  padding: 6px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  white-space: nowrap;
+  padding: 6px 12px;
+  background: var(--vsc-tertiary);
+  border: none;
+  border-radius: 8px;
+  color: var(--vsc-text);
+  font-size: 10px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
 }
 
-.state-action svg {
-  flex-shrink: 0;
-}
-
-.state-action:hover:not(:disabled) {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-}
-
-.state-action:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.state-action:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.state-action-primary {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--text-on-accent);
-}
-
-.state-action-primary:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: transparent;
-  box-shadow: var(--shadow-1);
-}
-
-.state-action-sm {
-  padding: 4px 10px;
-  font-size: var(--text-xs);
-}
-
-.state-action-block {
-  width: 100%;
-  margin-top: 4px;
+.error-retry-btn:hover {
+  background: var(--vsc-border);
 }

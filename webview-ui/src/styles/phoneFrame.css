@@ -1,7 +1,6 @@
 /* ===== PHONE FRAME ===== */
 .phone-frame {
   position: relative;
-  max-width: 100%;
   background: linear-gradient(180deg, #1a1a1a 0%, #0a0a0a 100%);
   border-radius: 40px;
   padding: 8px;
@@ -20,8 +19,8 @@
 
 .phone-screen {
   position: relative;
-  width: var(--phone-frame-width);
-  aspect-ratio: var(--phone-aspect);
+  width: var(--phone-width);
+  height: var(--phone-height);
   background: #000;
   border-radius: 32px;
   overflow: hidden;

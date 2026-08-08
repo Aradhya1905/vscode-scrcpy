@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import {
+    Smartphone,
     ChevronLeft,
+    ChevronDown,
     Circle,
     Square,
     Play,
@@ -8,13 +10,12 @@ import {
     Camera,
     MoreVertical,
     Settings,
+    RotateCw,
+    Check,
 } from 'lucide-react';
-import type { ConnectionStatus, DeviceInfo, DeviceListItem } from '../types';
-import { useDismissable } from '../hooks/useDismissable';
+import type { ConnectionStatus, DeviceListItem } from '../types';
 import { SettingsPanel } from './SettingsPanel';
 import { MorePanel } from './MorePanel';
-import { StatusChip } from './StatusChip';
-import { DeviceSelector } from './DeviceSelector';
 import { Tooltip } from './Tooltip';
 
 interface ToolbarProps {
@@ -29,11 +30,7 @@ interface ToolbarProps {
     selectedDeviceId: string | null;
     onSelectDevice: (deviceId: string) => void;
     onRefreshDevices: () => void;
-    deviceInfo?: DeviceInfo;
-    videoWidth?: number;
-    videoHeight?: number;
     toolbarPosition?: 'top' | 'bottom';
-    onToolbarPositionChange?: (position: 'top' | 'bottom') => void;
     showDeviceSkin?: boolean;
     onShowDeviceSkinChange?: (show: boolean) => void;
     gradientColor1?: string;
@@ -69,11 +66,7 @@ export const Toolbar = memo(function Toolbar({
     selectedDeviceId,
     onSelectDevice,
     onRefreshDevices,
-    deviceInfo,
-    videoWidth,
-    videoHeight,
     toolbarPosition = 'bottom',
-    onToolbarPositionChange,
     showDeviceSkin,
     onShowDeviceSkinChange,
     gradientColor1,
@@ -120,56 +113,26 @@ export const Toolbar = memo(function Toolbar({
         return () => window.removeEventListener('message', handler);
     }, []);
 
-    const closePanels = useCallback(() => {
-        setShowSettingsPanel(false);
-        setShowMorePanel(false);
-    }, []);
-
-    const closeSettingsPanel = useCallback(() => setShowSettingsPanel(false), []);
-    const closeMorePanel = useCallback(() => setShowMorePanel(false), []);
-
-    // The dropdown and the two panels overlap the same space, so exactly one of
-    // the three may be open. The dropdown is controlled from here for that
-    // reason; elsewhere DeviceSelector still owns its own open state.
-    const toggleSettingsPanel = useCallback(() => {
-        setShowDeviceDropdown(false);
-        setShowMorePanel(false);
-        setShowSettingsPanel((open) => !open);
-    }, []);
-
-    const toggleMorePanel = useCallback(() => {
-        setShowDeviceDropdown(false);
-        setShowSettingsPanel(false);
-        setShowMorePanel((open) => !open);
-    }, []);
-
-    const handleDeviceDropdownChange = useCallback((open: boolean) => {
-        setShowDeviceDropdown(open);
-        if (open) {
-            setShowSettingsPanel(false);
-            setShowMorePanel(false);
-        }
-    }, []);
-
-    // Scoped to the whole toolbar so a pointerdown on the video closes the
-    // panel, while a second click on the trigger button still just toggles.
-    const isPanelOpen = showSettingsPanel || showMorePanel;
-    const toolbarRef = useDismissable<HTMLDivElement>(isPanelOpen, closePanels);
-
     const selectedDevice = devices.find((d) => d.id === selectedDeviceId);
-    const primaryLabel = isConnected ? 'Stop Mirroring' : 'Start Mirroring';
+    const statusDotClass =
+        status === 'connected'
+            ? 'connected'
+            : status === 'connecting'
+              ? 'connecting'
+              : 'disconnected';
+
+    const handleDeviceSelect = (deviceId: string) => {
+        onSelectDevice(deviceId);
+        setShowDeviceDropdown(false);
+    };
 
     return (
-        <div
-            ref={toolbarRef}
-            className={`toolbar-container ${toolbarPosition === 'top' ? 'toolbar-at-top' : ''}`}
-        >
+        <div className={`toolbar-container ${toolbarPosition === 'top' ? 'toolbar-at-top' : ''}`}>
             {/* Settings Panel */}
             {showSettingsPanel && (
                 <SettingsPanel
-                    onClose={closeSettingsPanel}
+                    onClose={() => setShowSettingsPanel(false)}
                     toolbarPosition={toolbarPosition}
-                    onToolbarPositionChange={onToolbarPositionChange}
                     showDeviceSkin={showDeviceSkin}
                     onShowDeviceSkinChange={onShowDeviceSkinChange}
                     gradientColor1={gradientColor1}
@@ -197,7 +160,7 @@ export const Toolbar = memo(function Toolbar({
             {/* More Panel */}
             {showMorePanel && (
                 <MorePanel
-                    onClose={closeMorePanel}
+                    onClose={() => setShowMorePanel(false)}
                     toolbarPosition={toolbarPosition}
                     screenOff={screenOff}
                     onScreenOffChange={setScreenOff}
@@ -207,54 +170,118 @@ export const Toolbar = memo(function Toolbar({
                     onStayAwakeChange={setStayAwake}
                     darkMode={darkMode}
                     onDarkModeChange={setDarkMode}
-                    navEnabled={isConnected}
-                    onBack={onBack}
-                    onHome={onHome}
-                    onAppView={onAppView}
                 />
             )}
 
             <div className={`toolbar ${toolbarPosition === 'top' ? 'toolbar-at-top' : ''}`}>
-                {/* Row 1: status readout, which doubles as the device picker */}
-                <div className="toolbar-row toolbar-row-status">
-                    <DeviceSelector
-                        devices={devices}
-                        selectedDeviceId={selectedDeviceId}
-                        onSelectDevice={onSelectDevice}
-                        onRefresh={onRefreshDevices}
-                        isOpen={showDeviceDropdown}
-                        onOpenChange={handleDeviceDropdownChange}
-                        dropdownPlacement={toolbarPosition === 'top' ? 'down' : 'up'}
-                        triggerClassName="status-chip-trigger"
-                        triggerLabel="Device and connection status"
-                        triggerContent={
-                            <StatusChip
-                                status={status}
-                                deviceName={selectedDevice?.name}
-                                deviceInfo={deviceInfo}
-                                videoWidth={videoWidth}
-                                videoHeight={videoHeight}
-                                fps={fps}
-                            />
-                        }
-                    />
-                </div>
+                <div className="toolbar-row">
+                    {/* Left: Device Selector */}
+                    <div className="toolbar-group" style={{ flex: 1, minWidth: 50 }}>
+                        <div className="device-selector">
+                            <button
+                                className="device-selector-btn"
+                                onClick={() => {
+                                    setShowDeviceDropdown(!showDeviceDropdown);
+                                    setShowSettingsPanel(false);
+                                    setShowMorePanel(false);
+                                }}
+                            >
+                                <div className="device-info">
+                                    <div className="device-icon" style={{ position: 'relative' }}>
+                                        <Smartphone size={14} />
+                                        <div
+                                            className={`device-status-dot ${statusDotClass}`}
+                                            style={{
+                                                position: 'absolute',
+                                                bottom: -2,
+                                                right: -2,
+                                                border: '2px solid var(--vsc-secondary)',
+                                            }}
+                                        />
+                                    </div>
+                                    <span className="device-name">
+                                        {selectedDevice?.name || 'No Device'}
+                                    </span>
+                                </div>
+                                <ChevronDown size={10} />
+                            </button>
 
-                {/* Row 2: navigation, the primary action, then secondary actions */}
-                <div className="toolbar-row toolbar-row-controls">
-                    <div className="toolbar-group toolbar-nav">
+                            {/* Device Dropdown */}
+                            {showDeviceDropdown && (
+                                <div className="toolbar-device-dropdown">
+                                    <div className="device-dropdown-header">
+                                        <span className="device-dropdown-title">Devices</span>
+                                        <button
+                                            className="btn-icon"
+                                            style={{ width: 28, height: 28 }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onRefreshDevices();
+                                            }}
+                                            title="Scan for devices"
+                                        >
+                                            <RotateCw size={14} />
+                                        </button>
+                                    </div>
+                                    <div className="device-list">
+                                        {devices.length === 0 ? (
+                                            <div
+                                                style={{
+                                                    padding: '20px',
+                                                    textAlign: 'center',
+                                                    color: 'var(--vsc-text-muted)',
+                                                    fontSize: '12px',
+                                                }}
+                                            >
+                                                No devices found
+                                            </div>
+                                        ) : (
+                                            devices.map((device) => (
+                                                <button
+                                                    key={device.id}
+                                                    className={`device-item ${
+                                                        device.id === selectedDeviceId
+                                                            ? 'selected'
+                                                            : ''
+                                                    }`}
+                                                    onClick={() => handleDeviceSelect(device.id)}
+                                                >
+                                                    <div
+                                                        className={`device-status-dot ${
+                                                            device.status === 'device'
+                                                                ? 'connected'
+                                                                : 'disconnected'
+                                                        }`}
+                                                    />
+                                                    <div className="device-item-info">
+                                                        <div className="device-item-name">
+                                                            {device.name}
+                                                        </div>
+                                                        <div className="device-item-id">
+                                                            {device.id}
+                                                        </div>
+                                                    </div>
+                                                    {device.id === selectedDeviceId && (
+                                                        <Check size={14} color="var(--vsc-green)" />
+                                                    )}
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Center: Navigation Controls */}
+                    <div className="toolbar-group" style={{ padding: '0 4px' }}>
                         <Tooltip
                             content="Back"
                             description="Navigate back on device"
                             icon={<ChevronLeft size={10} />}
                             iconColor="gray"
                         >
-                            <button
-                                className="btn-icon"
-                                onClick={onBack}
-                                disabled={!isConnected}
-                                aria-label="Back"
-                            >
+                            <button className="btn-icon" onClick={onBack} disabled={!isConnected}>
                                 <ChevronLeft size={14} />
                             </button>
                         </Tooltip>
@@ -264,12 +291,7 @@ export const Toolbar = memo(function Toolbar({
                             icon={<Circle size={8} />}
                             iconColor="gray"
                         >
-                            <button
-                                className="btn-icon"
-                                onClick={onHome}
-                                disabled={!isConnected}
-                                aria-label="Home"
-                            >
+                            <button className="btn-icon" onClick={onHome} disabled={!isConnected}>
                                 <Circle size={10} />
                             </button>
                         </Tooltip>
@@ -283,41 +305,40 @@ export const Toolbar = memo(function Toolbar({
                                 className="btn-icon"
                                 onClick={onAppView}
                                 disabled={!isConnected}
-                                aria-label="Recent apps"
                             >
                                 <Square size={14} />
                             </button>
                         </Tooltip>
                     </div>
 
-                    <Tooltip
-                        content={primaryLabel}
-                        description={
-                            isConnected
-                                ? 'Stop screen mirroring session'
-                                : 'Begin screen mirroring session'
-                        }
-                        icon={isConnected ? <StopIcon size={10} /> : <Play size={10} />}
-                        iconColor={isConnected ? 'red' : 'green'}
-                        position="top"
-                    >
-                        <button
-                            className={`btn-primary-pill ${isConnected ? 'is-stop' : 'is-start'}`}
-                            onClick={isConnected ? onStop : onStart}
-                            disabled={isConnecting}
-                            aria-label={primaryLabel}
+                    {/* Right: Actions */}
+                    <div className="toolbar-group">
+                        <Tooltip
+                            content={isConnected ? 'Stop Mirroring' : 'Start Mirroring'}
+                            description={
+                                isConnected
+                                    ? 'Stop screen mirroring session'
+                                    : 'Begin screen mirroring session'
+                            }
+                            icon={isConnected ? <StopIcon size={10} /> : <Play size={10} />}
+                            iconColor={isConnected ? 'red' : 'green'}
+                            position="top"
+                            align="right"
                         >
-                            {isConnected ? <StopIcon size={13} /> : <Play size={13} />}
-                            <span className="btn-primary-pill-label">
-                                {isConnecting ? 'Starting…' : isConnected ? 'Stop' : 'Start'}
-                            </span>
-                        </button>
-                    </Tooltip>
-
-                    <div className="toolbar-group toolbar-actions">
+                            <button
+                                className="btn-icon"
+                                onClick={isConnected ? onStop : onStart}
+                                disabled={isConnecting}
+                                style={{
+                                    color: isConnected ? 'var(--vsc-red)' : 'var(--vsc-green)',
+                                }}
+                            >
+                                {isConnected ? <StopIcon size={14} /> : <Play size={14} />}
+                            </button>
+                        </Tooltip>
                         <Tooltip
                             content="Screenshot"
-                            description="Save device screen as PNG"
+                            description="Capture device screen to clipboard"
                             icon={<Camera size={10} />}
                             iconColor="blue"
                             position="top"
@@ -327,7 +348,6 @@ export const Toolbar = memo(function Toolbar({
                                 className="btn-icon"
                                 onClick={onScreenshot}
                                 disabled={!isConnected}
-                                aria-label="Screenshot"
                             >
                                 <Camera size={14} />
                             </button>
@@ -342,10 +362,11 @@ export const Toolbar = memo(function Toolbar({
                         >
                             <button
                                 className="btn-icon"
-                                onClick={toggleMorePanel}
-                                aria-label="More options"
-                                aria-expanded={showMorePanel}
-                                aria-haspopup="dialog"
+                                onClick={() => {
+                                    setShowMorePanel(!showMorePanel);
+                                    setShowSettingsPanel(false);
+                                    setShowDeviceDropdown(false);
+                                }}
                             >
                                 <MoreVertical size={14} />
                             </button>
@@ -360,10 +381,11 @@ export const Toolbar = memo(function Toolbar({
                         >
                             <button
                                 className="btn-icon"
-                                onClick={toggleSettingsPanel}
-                                aria-label="Settings"
-                                aria-expanded={showSettingsPanel}
-                                aria-haspopup="dialog"
+                                onClick={() => {
+                                    setShowSettingsPanel(!showSettingsPanel);
+                                    setShowMorePanel(false);
+                                    setShowDeviceDropdown(false);
+                                }}
                             >
                                 <Settings size={14} />
                             </button>

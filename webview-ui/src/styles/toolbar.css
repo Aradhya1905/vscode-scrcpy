@@ -3,7 +3,7 @@
   position: relative;
   order: 2;
   flex-shrink: 0;
-  transition: transform var(--dur-base) var(--ease);
+  transition: transform 0.3s ease-out;
   z-index: 50;
 }
 
@@ -14,11 +14,7 @@
 .toolbar {
   background: var(--vsc-secondary);
   border-top: 1px solid var(--vsc-border);
-  box-shadow: var(--shadow-1);
   padding: 6px 8px;
-  /* A control that can't fit is collapsed by the rules at the bottom of this
-     file; nothing here may produce a horizontal scrollbar. */
-  overflow-x: hidden;
 }
 
 .toolbar.toolbar-at-top {
@@ -31,140 +27,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  min-width: 0;
-}
-
-.toolbar-row + .toolbar-row {
-  margin-top: 6px;
-}
-
-.toolbar-row-controls {
-  gap: 6px;
 }
 
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 2px;
-  min-width: 0;
-}
-
-/* The action group must never be the thing that gets squeezed - the primary
-   pill and the status chip absorb the loss instead. */
-.toolbar-nav,
-.toolbar-actions {
-  flex: 0 0 auto;
-}
-
-/* ===== STATUS CHIP =====
-   Row 1. The chip is the device-dropdown trigger, which is what frees the
-   whole control row for actions. */
-.status-chip-trigger {
-  justify-content: space-between;
-}
-
-.status-chip {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-}
-
-/* The ring reads as a cut-out in whatever surface the toolbar actually uses,
-   rather than hardcoding that surface into the component. */
-.status-chip-dot {
-  align-self: center;
-  box-shadow: 0 0 0 2px var(--surface-raised);
-}
-
-.status-chip-primary {
-  font-size: var(--text-base);
-  font-weight: 650;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-chip-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-shrink: 0;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-/* Separated by gap alone. A typed or generated separator would strand a
-   leading '·' as soon as a breakpoint hides the field in front of it. */
-.status-chip-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.status-chip-charging {
-  color: var(--success);
-}
-
-/* ===== RESPONSIVE =====
-   The webview viewport is the sidebar, so plain media queries track the width
-   the user is actually dragging. */
-
-/* The primary pill sits inside a Tooltip wrapper, so the wrapper - not the
-   button - is the flex item that has to be allowed to give way. */
-.toolbar-row-controls > .tooltip-wrapper {
-  display: flex;
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-/* Below 280px the three nav buttons move into the More panel, which renders
-   them for exactly this case (.more-nav-fallback in MorePanel.tsx). The chip
-   sheds its lowest-value field at the same point. */
-@media (max-width: 279px) {
-  .toolbar-nav {
-    display: none;
-  }
-
-  .status-chip-fps {
-    display: none;
-  }
-}
-
-@media (max-width: 239px) {
-  .status-chip-resolution {
-    display: none;
-  }
-}
-
-@media (min-width: 280px) {
-  .more-nav-fallback {
-    display: none;
-  }
-}
-
-/* Below 200px the chip keeps only the dot and the model, and the primary
-   action drops its label rather than pushing the row into an overflow. */
-@media (max-width: 199px) {
-  .status-chip-meta {
-    display: none;
-  }
-
-  .btn-primary-pill-label {
-    display: none;
-  }
-
-  .btn-primary-pill {
-    padding: 0 10px;
-  }
-
-  .toolbar {
-    padding: 6px 4px;
-  }
 }
 
 /* ===== TOOLBAR INDICATOR (for auto-hide) ===== */
@@ -174,19 +42,16 @@
   bottom: 0;
   cursor: pointer;
   z-index: 40;
-  /* Opaque: this sits at the bottom edge of the video area, where a blurred
-     layer would force a composite pass per decoded frame */
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
+  background: rgba(139, 148, 158, 0.5);
+  backdrop-filter: blur(4px);
   padding: 2px 8px;
   border-radius: 6px;
-  box-shadow: var(--shadow-1);
-  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
 }
 
 .toolbar-indicator:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
+  background: rgba(139, 148, 158, 0.7);
 }
 
 .toolbar-at-top .toolbar-indicator {

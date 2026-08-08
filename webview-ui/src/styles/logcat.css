@@ -171,7 +171,7 @@
   color: var(--vsc-text);
   font-size: 12px;
   cursor: pointer;
-  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: all 0.2s ease;
 }
 
 .enhanced-logs-app-selector-btn:hover {
@@ -266,7 +266,7 @@
   cursor: pointer;
   width: 100%;
   text-align: left;
-  transition: background var(--dur-fast) var(--ease);
+  transition: background 0.15s ease;
   user-select: none;
   margin-bottom: 2px;
 }
@@ -315,7 +315,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: all 0.2s ease;
   position: relative;
   white-space: nowrap;
 }
@@ -428,7 +428,7 @@
   border-radius: 10px;
   border: 1px solid var(--vsc-border);
   background: rgba(13, 17, 23, 0.5);
-  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: all 0.2s ease;
 }
 
 .enhanced-logs-search-wrapper:focus-within {
@@ -468,7 +468,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
 }
 
 .enhanced-logs-search-option:hover {
@@ -499,7 +499,7 @@
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: all 0.2s ease;
   white-space: nowrap;
 }
 
@@ -551,7 +551,8 @@
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  font-family: var(--font-mono);
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .enhanced-logs-stream-inner {
@@ -567,7 +568,7 @@
   padding: 8px 12px;
   border-radius: 8px;
   margin-bottom: 4px;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: all 0.15s ease;
   border-left: 3px solid transparent;
 }
 
@@ -784,7 +785,7 @@
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease), color var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease), transform var(--dur-base) var(--ease);
+  transition: all 0.2s ease;
 }
 
 .enhanced-logs-status-btn:hover {
@@ -897,7 +898,7 @@
 }
 
 .enhanced-log-entry.is-new {
-  animation: log-entry-appear var(--dur-base) var(--ease);
+  animation: log-entry-appear 0.3s ease;
 }
 
 /* Responsive */
