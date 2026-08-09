@@ -27,9 +27,10 @@ vscode-scrcpy-*.vsix
 # esbuild bundle analysis - build-time only.
 dist/*.meta.json
 
-# The README serves its screenshots from raw.githubusercontent.com, so only the
-# extension icon (images/icon.png) needs to be in the package.
+# The README and CHANGELOG serve their screenshots from raw.githubusercontent.com,
+# so only the extension icon (images/icon.png) needs to be in the package.
 images/*.jpg
+images/zoom-button.png
 
 # Stale pre-Vite artifact; the real bundle is media/build/webview.js.
 media/webview.js
