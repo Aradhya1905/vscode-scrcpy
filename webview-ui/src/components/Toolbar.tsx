@@ -8,6 +8,7 @@ import {
     Play,
     Square as StopIcon,
     Camera,
+    Loader2,
     MoreVertical,
     Settings,
     RotateCw,
@@ -26,6 +27,7 @@ interface ToolbarProps {
     onBack?: () => void;
     onAppView?: () => void;
     onScreenshot?: () => void;
+    isCapturing?: boolean;
     devices: DeviceListItem[];
     selectedDeviceId: string | null;
     onSelectDevice: (deviceId: string) => void;
@@ -62,6 +64,7 @@ export const Toolbar = memo(function Toolbar({
     onBack,
     onAppView,
     onScreenshot,
+    isCapturing = false,
     devices,
     selectedDeviceId,
     onSelectDevice,
@@ -334,7 +337,7 @@ export const Toolbar = memo(function Toolbar({
                             </button>
                         </Tooltip>
                         <Tooltip
-                            content="Screenshot"
+                            content={isCapturing ? 'Capturing…' : 'Screenshot'}
                             description="Capture device screen to clipboard"
                             icon={<Camera size={10} />}
                             iconColor="blue"
@@ -344,9 +347,13 @@ export const Toolbar = memo(function Toolbar({
                             <button
                                 className="btn-icon"
                                 onClick={onScreenshot}
-                                disabled={!isConnected}
+                                disabled={!isConnected || isCapturing}
                             >
-                                <Camera size={14} />
+                                {isCapturing ? (
+                                    <Loader2 size={14} className="icon-spin" />
+                                ) : (
+                                    <Camera size={14} />
+                                )}
                             </button>
                         </Tooltip>
                         <Tooltip

@@ -149,6 +149,9 @@ export type WebviewMessage =
     | { command: 'back' }
     | { command: 'app-switch' }
     | { command: 'screenshot' }
+    // Result of writing a captured screenshot to the clipboard. Only the webview
+    // can do that write, so only the webview knows whether it worked.
+    | { command: 'screenshot-copied'; success: boolean; error?: string }
     | { command: 'open-file-manager' }
     | { command: 'open-shell-logs' }
     | { command: 'volume-up' }
@@ -210,6 +213,10 @@ export type ExtensionMessage =
     | { type: 'video'; k: 0 | 1; pts: number; data: ArrayBuffer } // exactly one access unit
     | { type: 'video-reset' } // discard decoder state and resync on the next keyframe
     | { type: 'error'; message: string }
+    | { type: 'screenshot-data'; data: ArrayBuffer } // PNG bytes, for the clipboard
+    // The capture itself failed. The extension has already shown the error; this
+    // exists so the webview can stop showing the capture as in flight.
+    | { type: 'screenshot-failed' }
     | { type: 'apk-files-selected'; paths: string[] }
     | { type: 'apk-install-status'; level: 'info' | 'warn' | 'error'; message: string }
     | { type: 'apk-install-result'; success: boolean; message: string }

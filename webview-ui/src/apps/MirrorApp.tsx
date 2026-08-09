@@ -9,6 +9,7 @@ import {
     useFrameFit,
 } from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
+import { copyPngToClipboard } from '../utils/clipboardImage';
 import '../styles/toolbar.css';
 import '../styles/settingsPanel.css';
 import '../styles/videoContainer.css';
@@ -25,6 +26,7 @@ export default function MirrorApp() {
     const [error, setError] = useState<string | undefined>();
     const [deviceList, setDeviceList] = useState<DeviceListItem[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+    const [isCapturing, setIsCapturing] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
     // Alt held while zoomed in: pan is one click away, so show the grab cursor
     const [isPanReady, setIsPanReady] = useState(false);
@@ -176,11 +178,40 @@ export default function MirrorApp() {
 
                 case 'disconnected':
                     setStatus('disconnected');
+                    // A capture in flight will never answer once the session is gone.
+                    setIsCapturing(false);
                     reset();
                     break;
 
                 case 'error':
                     setError(message.message);
+                    break;
+
+                case 'screenshot-data': {
+                    const png = message.data;
+                    void copyPngToClipboard(png)
+                        .then(
+                            () =>
+                                postMessageRef.current?.({
+                                    command: 'screenshot-copied',
+                                    success: true,
+                                }),
+                            (copyError: unknown) =>
+                                postMessageRef.current?.({
+                                    command: 'screenshot-copied',
+                                    success: false,
+                                    error:
+                                        copyError instanceof Error
+                                            ? copyError.message
+                                            : String(copyError),
+                                })
+                        )
+                        .finally(() => setIsCapturing(false));
+                    break;
+                }
+
+                case 'screenshot-failed':
+                    setIsCapturing(false);
                     break;
 
                 case 'device-info':
@@ -318,7 +349,8 @@ export default function MirrorApp() {
             addLog('Please start mirroring first', 'warn');
             return;
         }
-        addLog('Screenshot taken');
+        addLog('Capturing screenshot');
+        setIsCapturing(true);
         postMessage({ command: 'screenshot' });
     }, [isConnected, addLog, postMessage]);
 
@@ -566,6 +598,7 @@ export default function MirrorApp() {
                 onBack={handleBack}
                 onAppView={handleAppView}
                 onScreenshot={handleScreenshot}
+                isCapturing={isCapturing}
                 devices={deviceList}
                 selectedDeviceId={selectedDeviceId}
                 onSelectDevice={handleSelectDevice}

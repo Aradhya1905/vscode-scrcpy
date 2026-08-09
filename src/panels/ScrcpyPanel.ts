@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as os from 'os';
 import * as fs from 'fs';
 // Type-only: ScrcpyService drags in the @yume-chan protocol stack, ~63% of the
 // bundle, and is loaded on demand in _startStreaming() instead of at require() time.
@@ -177,6 +176,9 @@ export class ScrcpyPanel {
                         break;
                     case 'screenshot':
                         this._handleScreenshot();
+                        break;
+                    case 'screenshot-copied':
+                        this._handleScreenshotCopied(message);
                         break;
                     case 'scroll':
                         this._handleScroll(message);
@@ -668,30 +670,37 @@ export class ScrcpyPanel {
     private async _handleScreenshot() {
         if (!this._scrcpyService || !this._scrcpyService.isActive()) {
             vscode.window.showWarningMessage('Connect to a device before taking a screenshot.');
-            return;
-        }
-
-        const defaultDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-        const defaultFileName = `scrcpy-screenshot-${new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')}.png`;
-
-        const targetUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(path.join(defaultDir, defaultFileName)),
-            filters: { 'PNG Image': ['png'] },
-            saveLabel: 'Save Screenshot',
-        });
-
-        if (!targetUri) {
+            this._panel.webview.postMessage({ type: 'screenshot-failed' });
             return;
         }
 
         try {
             const image = await this._scrcpyService.captureScreenshot();
-            await vscode.workspace.fs.writeFile(targetUri, image);
-            vscode.window.showInformationMessage(`Screenshot saved to ${targetUri.fsPath}`);
+            // `vscode.env.clipboard` is text-only, so the webview does the write and
+            // reports back with `screenshot-copied`. Slicing to exact bounds keeps the
+            // ArrayBuffer transferable rather than cloned.
+            this._panel.webview.postMessage({
+                type: 'screenshot-data',
+                data: image.buffer.slice(
+                    image.byteOffset,
+                    image.byteOffset + image.byteLength
+                ) as ArrayBuffer,
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to take screenshot: ${message}`);
+            this._panel.webview.postMessage({ type: 'screenshot-failed' });
         }
+    }
+
+    private _handleScreenshotCopied(message: { success?: boolean; error?: string }) {
+        if (message.success) {
+            vscode.window.showInformationMessage('Screenshot copied to clipboard');
+            return;
+        }
+        vscode.window.showErrorMessage(
+            `Failed to copy screenshot: ${message.error || 'clipboard unavailable'}`
+        );
     }
 
     private _handleScroll(message: any) {
