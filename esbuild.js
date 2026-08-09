@@ -29,6 +29,9 @@ async function main() {
         external: ['vscode'],
         legalComments: 'none',
         minify,
+        // Written next to the bundle so `npx esbuild-visualizer`/`esbuild --analyze`
+        // can answer "what is actually in dist/extension.js" without a rebuild.
+        metafile: true,
     };
 
     if (watch) {
@@ -41,7 +44,11 @@ async function main() {
         return;
     }
 
-    await esbuild.build(buildOptions);
+    const result = await esbuild.build(buildOptions);
+    fs.writeFileSync(
+        path.join(__dirname, 'dist', 'extension.meta.json'),
+        JSON.stringify(result.metafile)
+    );
 }
 
 main().catch((err) => {

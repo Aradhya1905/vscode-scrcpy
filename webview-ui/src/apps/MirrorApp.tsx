@@ -1,19 +1,43 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { unstable_batchedUpdates } from 'react-dom';
+import { useState, useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import { Toolbar, VideoCanvas, Placeholder, PhoneFrame, ZoomHud } from '../components';
-import { useVSCodeMessages, useVideoDecoder, useSettingsStorage, useZoom } from '../hooks';
+import type { VideoCanvasHandle } from '../components';
+import {
+    useVSCodeMessages,
+    useVideoDecoder,
+    useSettingsStorage,
+    useZoom,
+    useFrameFit,
+} from '../hooks';
 import type { ConnectionStatus, ExtensionMessage, DeviceListItem, ScrollEventData } from '../types';
+import { copyPngToClipboard } from '../utils/clipboardImage';
+import '../styles/toolbar.css';
+import '../styles/settingsPanel.css';
+import '../styles/videoContainer.css';
+import '../styles/zoomHud.css';
+import '../styles/phoneFrame.css';
+import '../styles/deviceFrames.css';
+import '../styles/placeholder.css';
+
+/** Physical Samsung S20 body ratio (69.1mm x 151.7mm), matching deviceFrames.css */
+const DEVICE_SKIN_ASPECT_RATIO = 69.1 / 151.7;
 
 export default function MirrorApp() {
     const [status, setStatus] = useState<ConnectionStatus>('disconnected');
     const [error, setError] = useState<string | undefined>();
     const [deviceList, setDeviceList] = useState<DeviceListItem[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-    // Remount key for the canvas - only the device skin toggle should remount it
-    const [deviceSkinKey, setDeviceSkinKey] = useState(0);
-    // Rect-cache invalidation counter - bumped by anything that moves the canvas
-    const [canvasCacheKey, setCanvasCacheKey] = useState(0);
+    const [isCapturing, setIsCapturing] = useState(false);
     const [isPanning, setIsPanning] = useState(false);
+    // Alt held while zoomed in: pan is one click away, so show the grab cursor
+    const [isPanReady, setIsPanReady] = useState(false);
+
+    // Imperative handle on the canvas. Zoom/pan invalidate its rect cache through
+    // this instead of through a changing prop, so the transform never re-renders
+    // the canvas - the decoder is drawing into it.
+    const canvasHandleRef = useRef<VideoCanvasHandle | null>(null);
+    const handleTransformChange = useCallback(() => {
+        canvasHandleRef.current?.invalidateGeometry();
+    }, []);
 
     // Load settings from storage
     const { settings, isLoaded, updateSetting, resetSettings } = useSettingsStorage();
@@ -39,38 +63,93 @@ export default function MirrorApp() {
         resetZoom,
         zoomAtPoint,
         panBy,
+        setPanActive,
         showHud,
         holdHud,
     } = useZoom({
         initialZoom: settings.zoom,
         isSettingsLoaded: isLoaded,
         onZoomChange: handleZoomPersist,
+        onTransformChange: handleTransformChange,
+    });
+
+    const handlePanStateChange = useCallback(
+        (panning: boolean) => {
+            setIsPanning(panning);
+            setPanActive(panning);
+        },
+        [setPanActive]
+    );
+
+    // Alt is the pan modifier, so hint it with a grab cursor while it is held.
+    // Only armed above 100%, where the pan clamp actually allows travel; below
+    // that the listeners are not even attached. Auto-repeat keydowns set the
+    // same value, which React bails out of without rendering.
+    useEffect(() => {
+        if (zoom <= 1) {
+            setIsPanReady(false);
+            return;
+        }
+        const syncAlt = (event: KeyboardEvent) => setIsPanReady(event.altKey);
+        const clearAlt = () => setIsPanReady(false);
+
+        window.addEventListener('keydown', syncAlt);
+        window.addEventListener('keyup', syncAlt);
+        window.addEventListener('blur', clearAlt);
+        return () => {
+            window.removeEventListener('keydown', syncAlt);
+            window.removeEventListener('keyup', syncAlt);
+            window.removeEventListener('blur', clearAlt);
+        };
+    }, [zoom]);
+
+    // The skin is laid out from --phone-height, so size it to the panel instead of
+    // leaving it at the 630px design default. Skinless mirroring already stretches.
+    const frameHeight = useFrameFit({
+        containerRef: viewportRef,
+        aspectRatio: DEVICE_SKIN_ASPECT_RATIO,
+        enabled: showDeviceSkin,
     });
 
     const addLog = useCallback((_message: string, _level: 'info' | 'warn' | 'error' = 'info') => {
         // Logging disabled for performance
     }, []);
 
-    const { setCanvas, processVideoPacket, reset, getVideoSize } = useVideoDecoder({
-        onLog: addLog,
-    });
-
-    // Track status in a ref so video processing doesn't trigger re-render deps
-    const statusRef = useRef(status);
-    statusRef.current = status;
-
     // Use a ref to store postMessage to avoid circular dependency
     const postMessageRef = useRef<((msg: any) => void) | null>(null);
 
+    // Stable, so it cannot invalidate the decoder's configuration callbacks.
+    const requestKeyFrame = useCallback(() => {
+        postMessageRef.current?.({ command: 'video-request-keyframe' });
+    }, []);
+
+    // Stable for the same reason: the decoder holds it across configurations.
+    const reportBackpressure = useCallback((saturated: boolean) => {
+        postMessageRef.current?.({ command: 'video-backpressure', saturated });
+    }, []);
+
+    const { setCanvas, processVideoConfig, processVideoPacket, reset, getVideoSize } =
+        useVideoDecoder({
+            onLog: addLog,
+            onRequestKeyFrame: requestKeyFrame,
+            onBackpressureChange: reportBackpressure,
+        });
+
     const handleMessage = useCallback(
         (message: ExtensionMessage) => {
-            // Process video outside React's batching for maximum performance
-            // Use ref to avoid re-render dependency on status
+            // Process video outside React's batching for maximum performance.
+            // Deliberately not gated on connection status: `connected` is posted
+            // before streaming starts, so gating here can drop the one configuration
+            // packet of the stream and leave a permanently black canvas. The decoder
+            // hook ignores frames it cannot yet decode on its own.
             if (message.type === 'video') {
-                if (statusRef.current === 'connected') {
-                    processVideoPacket(message.data);
-                }
+                processVideoPacket(message.data, message.k === 1, message.pts);
                 return; // Early return - video messages don't need state updates
+            }
+
+            if (message.type === 'video-config') {
+                processVideoConfig(message.data);
+                return;
             }
 
             // Sent when the extension resumes forwarding after skipping frames. Clearing
@@ -81,54 +160,82 @@ export default function MirrorApp() {
                 return;
             }
 
-            // Use batched updates to prevent multiple re-renders
-            unstable_batchedUpdates(() => {
-                switch (message.type) {
-                    case 'connecting':
-                        setStatus('connecting');
-                        break;
+            // React 18's createRoot batches every update in an event handler
+            // automatically - no unstable_batchedUpdates wrapper needed.
+            switch (message.type) {
+                case 'connecting':
+                    setStatus('connecting');
+                    break;
 
-                    case 'connected':
-                        setStatus('connected');
-                        setError(undefined);
-                        // Request device info after state update
-                        setTimeout(() => {
-                            postMessageRef.current?.({ command: 'get-device-info' });
-                        }, 0);
-                        break;
+                case 'connected':
+                    setStatus('connected');
+                    setError(undefined);
+                    // Request device info after state update
+                    setTimeout(() => {
+                        postMessageRef.current?.({ command: 'get-device-info' });
+                    }, 0);
+                    break;
 
-                    case 'disconnected':
-                        setStatus('disconnected');
-                        reset();
-                        break;
+                case 'disconnected':
+                    setStatus('disconnected');
+                    // A capture in flight will never answer once the session is gone.
+                    setIsCapturing(false);
+                    reset();
+                    break;
 
-                    case 'error':
-                        setError(message.message);
-                        break;
+                case 'error':
+                    setError(message.message);
+                    break;
 
-                    case 'device-info':
-                        // Device info received but not used in new UI
-                        break;
-
-                    case 'device-list':
-                        setDeviceList(message.devices);
-                        break;
-
-                    case 'device-selected':
-                        setSelectedDeviceId(message.deviceId);
-                        break;
-
-                    case 'app-list':
-                    case 'recent-apps':
-                    case 'debug-apps':
-                    case 'app-launched':
-                    case 'fm-dir':
-                        // Not used in mirror UI
-                        break;
+                case 'screenshot-data': {
+                    const png = message.data;
+                    void copyPngToClipboard(png)
+                        .then(
+                            () =>
+                                postMessageRef.current?.({
+                                    command: 'screenshot-copied',
+                                    success: true,
+                                }),
+                            (copyError: unknown) =>
+                                postMessageRef.current?.({
+                                    command: 'screenshot-copied',
+                                    success: false,
+                                    error:
+                                        copyError instanceof Error
+                                            ? copyError.message
+                                            : String(copyError),
+                                })
+                        )
+                        .finally(() => setIsCapturing(false));
+                    break;
                 }
-            });
+
+                case 'screenshot-failed':
+                    setIsCapturing(false);
+                    break;
+
+                case 'device-info':
+                    // Device info received but not used in new UI
+                    break;
+
+                case 'device-list':
+                    setDeviceList(message.devices);
+                    break;
+
+                case 'device-selected':
+                    setSelectedDeviceId(message.deviceId);
+                    break;
+
+                case 'app-list':
+                case 'recent-apps':
+                case 'debug-apps':
+                case 'app-launched':
+                case 'fm-dir':
+                    // Not used in mirror UI
+                    break;
+            }
         },
-        [processVideoPacket, reset]
+        [processVideoConfig, processVideoPacket, reset]
     );
 
     const { postMessage } = useVSCodeMessages(handleMessage);
@@ -242,7 +349,8 @@ export default function MirrorApp() {
             addLog('Please start mirroring first', 'warn');
             return;
         }
-        addLog('Screenshot taken');
+        addLog('Capturing screenshot');
+        setIsCapturing(true);
         postMessage({ command: 'screenshot' });
     }, [isConnected, addLog, postMessage]);
 
@@ -314,39 +422,74 @@ export default function MirrorApp() {
         [postMessage]
     );
 
-    // Track previous device skin state to avoid restart on mount
-    const prevDeviceSkinRef = useRef(showDeviceSkin);
+    // Toolbar is memo'd and takes ~15 handlers. Every one has to be referentially
+    // stable or the memo never hits and the whole settings/more panel tree
+    // re-renders on any MirrorApp render.
+    const handleShowDeviceSkinChange = useCallback(
+        (value: boolean) => updateSetting('showDeviceSkin', value),
+        [updateSetting]
+    );
 
-    // Restart streaming when device skin is toggled
-    useEffect(() => {
-        // Only restart if device skin actually changed (not on initial mount)
-        if (isConnected && prevDeviceSkinRef.current !== showDeviceSkin) {
-            // Restart streaming to update video size
-            addLog('Device skin changed, restarting stream...');
-            handleStop();
-            // Wait a bit before restarting to ensure clean stop
-            const timer = setTimeout(() => {
-                handleStart();
-            }, 300);
-            prevDeviceSkinRef.current = showDeviceSkin;
-            return () => clearTimeout(timer);
-        }
-        prevDeviceSkinRef.current = showDeviceSkin;
-    }, [showDeviceSkin, isConnected, handleStop, handleStart, addLog]);
+    const handleGradientColor1Change = useCallback(
+        (color1: string) => updateSetting('gradientColor1', color1),
+        [updateSetting]
+    );
 
-    // Remount the canvas when the device skin changes (video size changes with it)
-    useEffect(() => {
-        setDeviceSkinKey((prev) => prev + 1);
-    }, [showDeviceSkin]);
+    const handleGradientColor2Change = useCallback(
+        (color2: string) => updateSetting('gradientColor2', color2),
+        [updateSetting]
+    );
 
-    // Invalidate the canvas rect cache when the rendered geometry changes.
-    // A CSS transform doesn't trigger the canvas ResizeObserver, so zoom/pan must
-    // invalidate explicitly or touch coordinates would use a stale rect.
-    // NOTE: this must NOT be the remount `key` - remounting mid-pan would tear
-    // down the canvas the decoder is drawing into.
+    const handleDeviceSkinColorChange = useCallback(
+        (color: string) => updateSetting('deviceSkinColor', color),
+        [updateSetting]
+    );
+
+    const handleTouchFeedbackChange = useCallback(
+        (enabled: boolean) => updateSetting('touchFeedback', enabled),
+        [updateSetting]
+    );
+
+    const handleQualityChange = useCallback(
+        (value: string) => updateSetting('quality', value),
+        [updateSetting]
+    );
+
+    const handleFpsChange = useCallback(
+        (value: string) => updateSetting('fps', value),
+        [updateSetting]
+    );
+
+    const handleBitrateChange = useCallback(
+        (value: string) => updateSetting('bitrate', value),
+        [updateSetting]
+    );
+
+    const handleCursorStyleChange = useCallback(
+        (value: 'crosshair' | 'default') => updateSetting('cursorStyle', value),
+        [updateSetting]
+    );
+
+    const handlePersistentMirroringChange = useCallback(
+        (enabled: boolean) => updateSetting('persistentMirroring', enabled),
+        [updateSetting]
+    );
+
+    const handleResetSettings = useCallback(() => {
+        resetSettings();
+        resetZoom();
+    }, [resetSettings, resetZoom]);
+
+    // Toggling the device skin is a pure CSS change: the canvas backing store is
+    // sized from the decoded frame, not from the skin, so the stream keeps running.
+    // The canvas must stay mounted for that - see the `skinVisible` prop below.
+    //
+    // Both of those resize the canvas' CSS box without a zoom/pan transform, so the
+    // rect cache is invalidated here. Zoom and pan go through useZoom's
+    // onTransformChange instead, which fires after the transform is written.
     useEffect(() => {
-        setCanvasCacheKey((prev) => prev + 1);
-    }, [showDeviceSkin, zoom, panX, panY]);
+        handleTransformChange();
+    }, [showDeviceSkin, frameHeight, handleTransformChange]);
 
     // Surface the zoom HUD briefly once the stream comes up, so it's discoverable
     useEffect(() => {
@@ -387,45 +530,31 @@ export default function MirrorApp() {
                 ref={viewportRef}
                 className={`video-container ${
                     !showDeviceSkin && isConnected ? 'no-device-skin' : ''
-                } ${isPanning ? 'panning' : ''}`}
+                } ${isPanning ? 'panning' : ''} ${isPanReady && !isPanning ? 'pan-ready' : ''}`}
+                style={
+                    {
+                        // Custom properties aren't part of React's CSSProperties
+                        '--phone-height': `${frameHeight}px`,
+                    } as CSSProperties
+                }
             >
                 {isConnected ? (
                     <>
-                        <div
-                            ref={contentRef}
-                            className="zoom-content"
-                            style={{
-                                transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-                            }}
-                        >
-                            {showDeviceSkin ? (
-                                <PhoneFrame
-                                    key={`phone-frame-${settings.deviceSkinColor || 'default'}`}
-                                    skinColor={settings.deviceSkinColor}
-                                >
-                                    <div className="mirror-stage">
-                                        <VideoCanvas
-                                            key={deviceSkinKey}
-                                            isConnected={isConnected}
-                                            canvasRef={setCanvas}
-                                            getVideoSize={getVideoSize}
-                                            onTouchEvent={handleTouchEvent}
-                                            onScrollEvent={handleScrollEvent}
-                                            onKeyEvent={handleKeyEvent}
-                                            onPasteText={handlePasteText}
-                                            onLog={addLog}
-                                            invalidateCacheKey={canvasCacheKey}
-                                            touchEnabled={settings.touchFeedback !== false}
-                                            onZoomWheel={zoomAtPoint}
-                                            onPan={panBy}
-                                            onPanStateChange={setIsPanning}
-                                        />
-                                    </div>
-                                </PhoneFrame>
-                            ) : (
+                        {/* useZoom writes `transform` here imperatively - a pan must
+                            not go through React state, and React must not fight it.
+                            --phone-height therefore rides the container instead: it
+                            inherits down to the frame, and React owns that node's
+                            style outright. */}
+                        <div ref={contentRef} className="zoom-content">
+                            {/* Rendered unconditionally: swapping the canvas between two
+                                parents would remount it and drop the running stream. */}
+                            <PhoneFrame
+                                skinColor={settings.deviceSkinColor}
+                                skinVisible={showDeviceSkin}
+                            >
                                 <div className="mirror-stage">
                                     <VideoCanvas
-                                        key={deviceSkinKey}
+                                        ref={canvasHandleRef}
                                         isConnected={isConnected}
                                         canvasRef={setCanvas}
                                         getVideoSize={getVideoSize}
@@ -434,14 +563,13 @@ export default function MirrorApp() {
                                         onKeyEvent={handleKeyEvent}
                                         onPasteText={handlePasteText}
                                         onLog={addLog}
-                                        invalidateCacheKey={canvasCacheKey}
                                         touchEnabled={settings.touchFeedback !== false}
                                         onZoomWheel={zoomAtPoint}
                                         onPan={panBy}
-                                        onPanStateChange={setIsPanning}
+                                        onPanStateChange={handlePanStateChange}
                                     />
                                 </div>
-                            )}
+                            </PhoneFrame>
                         </div>
                         <ZoomHud
                             zoom={zoom}
@@ -470,43 +598,33 @@ export default function MirrorApp() {
                 onBack={handleBack}
                 onAppView={handleAppView}
                 onScreenshot={handleScreenshot}
+                isCapturing={isCapturing}
                 devices={deviceList}
                 selectedDeviceId={selectedDeviceId}
                 onSelectDevice={handleSelectDevice}
                 onRefreshDevices={handleRefreshDevices}
                 toolbarPosition="bottom"
                 showDeviceSkin={showDeviceSkin}
-                onShowDeviceSkinChange={(value) => updateSetting('showDeviceSkin', value)}
+                onShowDeviceSkinChange={handleShowDeviceSkinChange}
                 gradientColor1={settings.gradientColor1}
                 gradientColor2={settings.gradientColor2}
-                onGradientColor1Change={(color1) => {
-                    updateSetting('gradientColor1', color1);
-                }}
-                onGradientColor2Change={(color2) => {
-                    updateSetting('gradientColor2', color2);
-                }}
+                onGradientColor1Change={handleGradientColor1Change}
+                onGradientColor2Change={handleGradientColor2Change}
                 deviceSkinColor={settings.deviceSkinColor}
-                onDeviceSkinColorChange={(color) => {
-                    updateSetting('deviceSkinColor', color);
-                }}
+                onDeviceSkinColorChange={handleDeviceSkinColorChange}
                 touchFeedback={settings.touchFeedback !== false}
-                onTouchFeedbackChange={(enabled) => updateSetting('touchFeedback', enabled)}
+                onTouchFeedbackChange={handleTouchFeedbackChange}
                 quality={settings.quality}
-                onQualityChange={(value) => updateSetting('quality', value)}
+                onQualityChange={handleQualityChange}
                 fps={settings.fps}
-                onFpsChange={(value) => updateSetting('fps', value)}
+                onFpsChange={handleFpsChange}
                 bitrate={settings.bitrate}
-                onBitrateChange={(value) => updateSetting('bitrate', value)}
+                onBitrateChange={handleBitrateChange}
                 cursorStyle={settings.cursorStyle}
-                onCursorStyleChange={(value) => updateSetting('cursorStyle', value)}
-                onResetSettings={() => {
-                    resetSettings();
-                    resetZoom();
-                }}
+                onCursorStyleChange={handleCursorStyleChange}
+                onResetSettings={handleResetSettings}
                 persistentMirroring={persistentMirroring}
-                onPersistentMirroringChange={(enabled) =>
-                    updateSetting('persistentMirroring', enabled)
-                }
+                onPersistentMirroringChange={handlePersistentMirroringChange}
             />
         </>
     );

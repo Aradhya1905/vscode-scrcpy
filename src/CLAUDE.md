@@ -48,6 +48,7 @@ src/
 │   ├── DeviceFileService.ts  # File operations (push/pull/delete)
 │   ├── ApkInstaller.ts       # APK installation
 │   ├── AdbLogcatService.ts   # Logcat streaming
+│   ├── AdbCommandRunner.ts   # One-shot ADB commands (socket or spawn)
 │   └── AdbPathResolver.ts    # Cross-platform ADB detection
 ├── panels/                   # Webview panels (floating windows)
 │   ├── ScrcpyPanel.ts        # Mirror panel (can detach from sidebar)
@@ -69,7 +70,7 @@ Services handle core business logic with event-driven callbacks.
 ```typescript
 // ✅ DO: Event-driven service pattern
 export interface ScrcpyServiceEvents {
-    onVideoData: (data: Buffer) => void;
+    onVideoPacket: (packet: ScrcpyVideoPacket) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
@@ -276,6 +277,30 @@ rg -n "vscode\.commands\.register" src/
 
 ## Common Gotchas
 
+### Nothing Heavy at Activation
+
+`extension.ts` statically imports one thing: `ScrcpySidebarView`. Panels are loaded
+inside their command handler, and `ScrcpyService` inside `_startStreaming()` on both
+surfaces:
+
+```typescript
+// Type-only - erased, so it costs nothing at require() time.
+import type { ScrcpyService } from '../services/ScrcpyService';
+
+// ...in _startStreaming(), once the user actually asks to mirror:
+const { ScrcpyService } = await import('../services/ScrcpyService');
+```
+
+`ScrcpyService` is the only consumer of `@yume-chan/*`, which is ~63% of the bundle,
+so a static import anywhere on the activation path parses and evaluates all of it
+before the sidebar can paint. Two rules follow: never import `ScrcpyService` for its
+value outside `_startStreaming`, and never add a top-level `import` of a panel to
+`extension.ts` - `require()`/`await import()` inside the handler is what keeps the
+module lazy through esbuild's CJS output.
+
+Activation itself is `onView:scrcpySidebar` only. VS Code >= 1.74 derives command
+activation from `contributes.commands`, so `onCommand:*` entries are redundant.
+
 ### ADB Server Connection
 
 The extension connects to the local ADB server on port 5037:
@@ -287,23 +312,76 @@ const connector = new AdbServerNodeTcpConnector({
 ```
 ADB server must be running before the extension can discover devices.
 
+### One-Shot ADB Commands
+
+Never `spawn('adb', ...)` in a service. Go through `AdbCommandRunner`, which picks
+the transport per call:
+
+```typescript
+// Device shell. Throws on a non-zero exit; returns trimmed stdout.
+const battery = await AdbCommandRunner.shell(deviceId, ['dumpsys', 'battery'], 10_000);
+
+// Same, but a failing command comes back as exitCode rather than a throw.
+const result = await AdbCommandRunner.shellDetailed(deviceId, [userTypedCommand]);
+
+// Not a shell - pull/install/logcat -c speak their own protocols. Always spawns.
+await AdbCommandRunner.adb(deviceId, ['pull', remotePath, localPath]);
+```
+
+`command` is the shell command only: no `shell`, no `-s <device>`. Both backends
+join the elements with spaces exactly as the adb CLI does, so one element holding
+pipes or `;` works as written.
+
+While a mirror session is live, `ScrcpyService` registers its `Adb` handle and
+every command for that device rides the existing connection - no process, no
+reconnect, no handshake. With mirroring off, the same call spawns. The backend is
+chosen once per call and never retried across backends: a command that failed over
+the socket may already have run.
+
+`timeoutMs` is optional; omitting it means unbounded, which is what the user-typed
+shell console wants.
+
+See [services/AdbCommandRunner.ts](services/AdbCommandRunner.ts)
+
 ### Video Buffering
 
-Video data is buffered and sent in batches to avoid overwhelming the webview:
-```typescript
-// Buffer limit: 2MB to prevent memory issues
-private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
+Video batching lives in `VideoFrameForwarder`, not in the view or the panel. Both
+surfaces own one instance and differ only in `isDeliverable`:
 
-// Batch interval: ~8ms for low latency
-this._sendVideoTimeout = setTimeout(() => {
-    const combined = Buffer.concat(this._videoBuffer);
-    this._view.webview.postMessage({
-        type: 'video',
-        data: combined.toString('base64'),  // Base64 for efficiency
-    });
-}, 8);
+```typescript
+this._videoForwarder = new VideoFrameForwarder({
+    postMessage: (message) => this._view.webview.postMessage(message),
+    isDeliverable: () => !(this._persistentMirroringEnabled && !this._isViewVisible),
+    requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
+});
+
+// Hand the bound handler straight to the service
+onVideoPacket: this._videoForwarder.handlePacket,
 ```
-See [views/ScrcpySidebarView.ts:366-398](views/ScrcpySidebarView.ts#L366-L398)
+
+It posts one message per access unit - no batching, since `sendFrameMeta: true`
+already delivers exactly one access unit per packet, so a batch window could only
+add latency and merge units the decoder must see separately. The wire format is
+raw `ArrayBuffer`, which VS Code transfers instead of cloning:
+
+```
+{ type: 'video-config', data: ArrayBuffer }                 // SPS+PPS, Annex-B
+{ type: 'video', k: 0 | 1, pts: number, data: ArrayBuffer } // one access unit
+{ type: 'video-reset' }                                     // resync the decoder
+```
+
+SPS+PPS are prepended to every keyframe, so each IDR is self-sufficient and the
+webview can configure or recover from any one of them. One invariant governs every
+gap (hidden surface, saturation, resync): nothing is forwarded until a keyframe
+arrives.
+
+Saturation is the one gap the host cannot detect itself - only the webview sees its
+decode queue - so it arrives as `{ command: 'video-backpressure', saturated }` and
+maps to `setSaturated()`. While saturated the gap never closes: keyframes pass,
+everything between them is dropped, which keeps a picture on screen and keeps the
+webview receiving enough traffic to report recovery.
+
+See [services/VideoFrameForwarder.ts](services/VideoFrameForwarder.ts)
 
 ### Visibility Handling
 

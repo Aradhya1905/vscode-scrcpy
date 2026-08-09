@@ -57,8 +57,8 @@ export class LogcatPanel {
             },
         });
 
-        this._logcatService.onLogEntry((entry) => {
-            this._postMessage({ type: 'logcat-entry', entry });
+        this._logcatService.onLogEntries((entries) => {
+            this._postMessage({ type: 'logcat-batch', entries });
         });
 
         this._logcatService.onCrash((crash) => {
@@ -72,6 +72,20 @@ export class LogcatPanel {
         this._panel.webview.html = this._getHtmlForWebview();
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+
+        // A hidden panel renders nothing, so stop forwarding entries into it. The
+        // logcat process keeps running and the service buffers, so no lines are lost.
+        this._panel.onDidChangeViewState(
+            () => {
+                if (this._panel.visible) {
+                    this._logcatService.resume();
+                } else {
+                    this._logcatService.pause();
+                }
+            },
+            null,
+            this._disposables
+        );
 
         this._panel.webview.onDidReceiveMessage(
             async (message) => {
@@ -156,6 +170,10 @@ export class LogcatPanel {
                 buffers: buffers as any,
                 clear,
             });
+            // startStreaming() resets the paused flag; re-apply it if we are hidden.
+            if (!this._panel.visible) {
+                this._logcatService.pause();
+            }
             this._postMessage({ type: 'logcat-started' });
         } catch (error: any) {
             this._postMessage({ type: 'logcat-error', error: error.message });

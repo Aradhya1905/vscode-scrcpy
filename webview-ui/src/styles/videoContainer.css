@@ -47,12 +47,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Flex must not resize the skinned frame: useFrameFit already sized it to the
+     panel via --phone-height, and shrinking would break that aspect ratio. */
+  flex: 0 0 auto;
   transform-origin: center center;
   will-change: transform;
   transition: transform 0.12s ease-out;
 }
 
 .video-container.no-device-skin .zoom-content {
+  flex: 1 1 auto;
   width: 100%;
   height: 100%;
 }
@@ -65,6 +69,12 @@
 .video-container.panning,
 .video-container.panning .video-canvas {
   cursor: grabbing;
+}
+
+/* Alt held while zoomed in - the next left-drag pans instead of touching */
+.video-container.pan-ready,
+.video-container.pan-ready .video-canvas {
+  cursor: grab;
 }
 
 /* ===== ACTIVE SCREEN (Video Canvas) ===== */

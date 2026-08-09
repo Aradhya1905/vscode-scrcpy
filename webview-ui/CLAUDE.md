@@ -150,19 +150,26 @@ export function useVideoDecoder({ onLog }: UseVideoDecoderOptions) {
         canvasRef.current = canvas;
     }, []);
 
-    const processVideoPacket = useCallback((data: string) => {
-        // Base64 decode and process H.264 NAL units
+    const processVideoConfig = useCallback((payload: ArrayBuffer | ArrayBufferView) => {
+        // Find the SPS and configure the decoder
     }, []);
+
+    const processVideoPacket = useCallback(
+        (payload: ArrayBuffer | ArrayBufferView, keyframe: boolean, pts: number) => {
+            // Decode one H.264 access unit
+        },
+        []
+    );
 
     const reset = useCallback(() => {
         // Clean up decoder state
     }, []);
 
-    return { setCanvas, processVideoPacket, reset, getVideoSize };
+    return { setCanvas, processVideoConfig, processVideoPacket, reset, getVideoSize };
 }
 ```
 
-Example: [src/hooks/useVideoDecoder.ts:88-351](src/hooks/useVideoDecoder.ts#L88-L351)
+Example: [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
 
 ### VS Code Message Pattern
 
@@ -181,7 +188,7 @@ window.addEventListener('message', (event) => {
     const message = event.data;
     switch (message.type) {
         case 'video':
-            processVideoPacket(message.data);
+            processVideoPacket(message.data, message.k === 1, message.pts);
             break;
         case 'connected':
             setIsConnected(true);
@@ -236,22 +243,51 @@ const handlePointerMove = useCallback((event: React.PointerEvent) => {
 Example: [src/components/VideoCanvas.tsx:279-327](src/components/VideoCanvas.tsx#L279-L327)
 
 ```typescript
-// ✅ DO: Reuse buffers to reduce GC pressure
-const decodeBufferRef = useRef<Uint8Array | null>(null);
+// ✅ DO: Wrap the transferred buffer instead of copying it
+// The extension posts an exact-bounds ArrayBuffer, so a view over it costs
+// nothing. `new EncodedVideoChunk({data})` copies internally per spec, which
+// makes that the one unavoidable copy per frame.
+const data = new Uint8Array(payload);
 
-const processVideoPacket = useCallback((data: string) => {
-    const len = binaryString.length;
-    if (decodeBufferRef.current && decodeBufferRef.current.length >= len) {
-        // Reuse existing buffer
-        uint8Data = decodeBufferRef.current.subarray(0, len);
-    } else {
-        // Allocate with headroom for future frames
-        decodeBufferRef.current = new Uint8Array(Math.max(len * 2, 256 * 1024));
-    }
+decoder.decode(new EncodedVideoChunk({ type: keyframe ? 'key' : 'delta', timestamp, data }));
+```
+
+Example: [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
+
+```typescript
+// ✅ DO: drive a per-pointermove transform imperatively, not through state
+// A pan that goes through setState costs a React render *and* a forced layout
+// per move, interleaved with drawImage on the same main thread. `panRef` is the
+// live value; React state only catches up on pointer-up, for the HUD.
+const panBy = useCallback(
+    (deltaX: number, deltaY: number) => {
+        panRef.current = clampPan(
+            { x: panRef.current.x + deltaX, y: panRef.current.y + deltaY },
+            zoomRef.current
+        );
+        writeTransform(); // content.style.transform = ...
+    },
+    [clampPan, writeTransform]
+);
+```
+
+Clamp bounds come from cached `offsetWidth`/`clientWidth` measured once at pan
+start - never read layout inside a state updater. The transform lives *only* in
+the imperative write, so React must not also set it via `style`.
+
+Example: [src/hooks/useZoom.ts](src/hooks/useZoom.ts)
+
+```typescript
+// ✅ DO: invalidate a child's cached geometry through an imperative handle
+// A changing `invalidateCacheKey` prop defeats memo() on VideoCanvas and
+// re-renders the canvas the decoder is drawing into.
+const canvasHandleRef = useRef<VideoCanvasHandle | null>(null);
+const handleTransformChange = useCallback(() => {
+    canvasHandleRef.current?.invalidateGeometry();
 }, []);
 ```
 
-Example: [src/hooks/useVideoDecoder.ts:196-203](src/hooks/useVideoDecoder.ts#L196-L203)
+Example: [src/apps/MirrorApp.tsx](src/apps/MirrorApp.tsx)
 
 ---
 
@@ -274,7 +310,7 @@ Example: [src/hooks/useVideoDecoder.ts:196-203](src/hooks/useVideoDecoder.ts#L19
 
 - **[hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)** - H.264 decoding
   - WebCodecs VideoDecoder API
-  - NAL unit parsing (SPS, PPS, IDR, non-IDR)
+  - SPS lookup for codec configuration (`findNal`, once per stream)
   - Frame timing and backpressure handling
 
 - **[hooks/useVSCodeMessages.ts](src/hooks/useVSCodeMessages.ts)** - Extension messaging
@@ -399,27 +435,66 @@ if (videoAspect > canvasAspect) {
 ```
 See [src/components/VideoCanvas.tsx:150-183](src/components/VideoCanvas.tsx#L150-L183)
 
-### Base64 Decoding Performance
+### Video Wire Format
 
-Video data is sent as base64 for efficiency (faster than JSON arrays):
+Video arrives as raw `ArrayBuffer`, one message per H.264 access unit. VS Code
+transfers an `ArrayBuffer` rather than cloning it, so there is no base64 hop and
+no byte-by-byte decode on the main thread:
+
 ```typescript
-// Extension sends: message.data = buffer.toString('base64')
-// Webview receives and decodes:
-const binaryString = atob(data);
+// Extension posts: { type: 'video', k: 0 | 1, pts: number, data: ArrayBuffer }
+// Webview wraps it - no copy:
+const data = new Uint8Array(payload);
 ```
+
+`k` is the keyframe flag and `pts` a monotonic microsecond timestamp, both read
+straight off the message - the webview never scans NAL units to recover them.
+Keyframes arrive with SPS+PPS already prepended, so any keyframe can configure or
+recover the decoder.
 
 ### Frame Dropping for Backpressure
 
-When decoder queue is too deep, drop non-keyframes:
+When decoder queue is too deep, drop non-keyframes. This is the **first** thing
+the packet handler does - `keyframe` is a message field, so the decision costs one
+field read and no parsing:
 ```typescript
 const MAX_DECODE_QUEUE_SIZE = 3;
 
-if (decoderRef.current.decodeQueueSize > MAX_DECODE_QUEUE_SIZE && !hasKeyframe) {
+if (!keyframe && (decoderRef.current?.decodeQueueSize ?? 0) > MAX_DECODE_QUEUE_SIZE) {
     droppedFramesRef.current++;
     return; // Drop this non-keyframe
 }
 ```
-See [src/hooks/useVideoDecoder.ts:254-270](src/hooks/useVideoDecoder.ts#L254-L270)
+
+A local drop still paid for a host copy, a `postMessage` and a structured clone, so
+sustained saturation is also reported upstream - once per transition, never per
+frame:
+
+```typescript
+vscode.postMessage({ command: 'video-backpressure', saturated: true });
+```
+
+Entry needs real evidence (a queue over 6 on two consecutive frames, **or** ~30
+consecutive locally dropped deltas - the case where the queue pins just under the
+drop threshold and no depth test would ever fire). While saturated the extension
+forwards keyframes only, so recovery is detected by polling `decodeQueueSize`
+rather than by arriving frames. See [src/hooks/useVideoDecoder.ts](src/hooks/useVideoDecoder.ts)
+
+### Memo and Prop Identity
+
+`Toolbar`, `VideoCanvas`, `DeviceSelector` and `ZoomHud` are all `memo()`'d, which
+means every handler they receive has to be wrapped in `useCallback` - one inline
+arrow is enough to make the memo a no-op. Two non-obvious cases:
+
+- `DeviceSelector` refreshes the device list in an effect keyed on `isOpen`. An
+  unstable `onRefresh` in the dep array re-fires it and re-posts `get-device-list`,
+  so the callback is held in a ref.
+- `useVSCodeMessages` registers its `message` listener once and routes through a
+  ref. The effect also posts `ready`, which kicks off extension-side init - a dep
+  change must never be able to retrigger that.
+
+`unstable_batchedUpdates` is a React-17 shim and a no-op under `createRoot`;
+event handlers batch automatically.
 
 ### Cleanup on Unmount
 
@@ -438,26 +513,55 @@ useEffect(() => {
 
 ## Vite Build Configuration
 
-Output is built to `../media/build/` for extension to serve:
+Output is built to `../media/build/` for the extension to serve. `media/webview.html`
+links exactly two files by name - `webview.js` and `webview.css` - so those stay
+unhashed; everything else is a hashed chunk under `chunks/`:
 
 ```typescript
 // vite.config.ts
 export default defineConfig({
-    plugins: [react()],
+    base: './',
     build: {
         outDir: '../media/build',
-        emptyOutDir: true,
         rollupOptions: {
             output: {
                 entryFileNames: 'webview.js',
-                assetFileNames: 'webview.[ext]',
+                chunkFileNames: 'chunks/[name]-[hash].js',
+                // Vite names a CSS asset after the chunk that owns it, so the entry's
+                // sheet is "index.css" and every other one is named for its app chunk.
+                assetFileNames: (asset) =>
+                    asset.names?.[0] === 'index.css'
+                        ? 'webview.[ext]'
+                        : 'chunks/[name]-[hash].[ext]',
             },
         },
     },
 });
 ```
 
-The extension serves these files with proper CSP headers.
+### Code splitting
+
+One webview shows one view, chosen by the extension before the bundle loads, so
+`App.tsx` mounts the four apps through `React.lazy` and each becomes its own chunk.
+Three rules keep that split real:
+
+- **Import shared components by path, not through `../components`.** The barrel pulls
+  `Toolbar`, `VideoCanvas` and the rest into whichever chunk touches it, which is
+  exactly what the split is meant to avoid. `import { DeviceSelector } from
+  '../components/DeviceSelector'` - the barrel is for the mirror view, which needs
+  all of it anyway.
+- **`styles/index.css` is core only** (base, buttons, deviceSelector, tooltip). A
+  sheet used by one view is imported by that view's app module so it rides that
+  chunk; Vite injects the `<link>` before executing the chunk.
+- **`base: './'` is load-bearing.** Chunk URLs resolve against the entry's
+  `import.meta.url`, which the extension rewrites to a webview-resource URI under
+  `media/build/`. An absolute base resolves against the webview origin root and 404s.
+
+`media/webview.html` loads the entry with `type="module"` - required for dynamic
+import. That is a cross-origin load (`vscode-webview://` document, `vscode-cdn.net`
+resource), which works because VS Code's webview service worker serves resources
+with `Access-Control-Allow-Origin: *`. The CSP allows the chunks too: `script-src
+{{cspSource}}` covers the whole resource host, not just the files named in the HTML.
 
 ---
 
@@ -472,12 +576,12 @@ NAL (Network Abstraction Layer) unit types in H.264:
 | 7 | SPS | Sequence Parameter Set (codec configuration) |
 | 8 | PPS | Picture Parameter Set (picture configuration) |
 
-The decoder is configured when SPS+PPS are received:
+The decoder is configured from the SPS in an Annex-B blob - either the
+`video-config` message or the configuration prepended to any keyframe:
 ```typescript
-if (spsNalRef.current && ppsNalRef.current && !decoderConfiguredRef.current) {
-    const codec = parseSPS(spsNalRef.current); // "avc1.640028"
-    decoder.configure({ codec, optimizeForLatency: true });
-}
+const sps = findNal(annexB, NAL_SPS);
+const codec = parseSPS(sps); // "avc1.640028"
+decoder.configure({ codec, optimizeForLatency: true });
 ```
 
 ---

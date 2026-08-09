@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Loader2, Terminal } from 'lucide-react';
-import { DeviceSelector } from '../components';
+// Imported by path, not through the barrel: the barrel drags Toolbar, VideoCanvas
+// and the rest into this view's chunk and undoes the code split.
+import { DeviceSelector } from '../components/DeviceSelector';
 import { useVSCodeMessages } from '../hooks';
 import type {
     AppProcess,
@@ -12,6 +14,8 @@ import type {
     ShellCommandResult,
 } from '../types';
 import { LogsPanel } from '../components/logs/LogsPanel';
+import '../styles/logs.css';
+import '../styles/shellLogs.css';
 
 function toDate(value: unknown): Date {
     if (value instanceof Date) return value;
@@ -65,12 +69,17 @@ export default function ShellLogsApp() {
                 setShellExecuting(false);
                 break;
 
-            case 'logcat-entry':
+            case 'logcat-batch': {
+                const incoming = message.entries;
+                if (incoming.length === 0) {
+                    break;
+                }
                 setLogEntries((prev) => {
-                    const next = [...prev, message.entry];
+                    const next = prev.concat(incoming);
                     return next.length > 2000 ? next.slice(next.length - 2000) : next;
                 });
                 break;
+            }
             case 'crash-detected':
                 setCrashes((prev) => {
                     const next = [message.crash, ...prev];
@@ -103,6 +112,16 @@ export default function ShellLogsApp() {
     }, []);
 
     const { postMessage } = useVSCodeMessages(handleMessage);
+
+    const handleSelectDeviceFromPicker = useCallback(
+        (id: string) => postMessage({ command: 'select-device', deviceId: id }),
+        [postMessage]
+    );
+
+    const handleRefreshDeviceList = useCallback(
+        () => postMessage({ command: 'get-device-list' }),
+        [postMessage]
+    );
 
     // Initial fetches
     useEffect(() => {
@@ -196,10 +215,8 @@ export default function ShellLogsApp() {
                         devices={devices}
                         selectedDeviceId={selectedDeviceId}
                         dropdownPlacement="down"
-                        onSelectDevice={(id) =>
-                            postMessage({ command: 'select-device', deviceId: id })
-                        }
-                        onRefresh={() => postMessage({ command: 'get-device-list' })}
+                        onSelectDevice={handleSelectDeviceFromPicker}
+                        onRefresh={handleRefreshDeviceList}
                     />
                 </div>
             </div>

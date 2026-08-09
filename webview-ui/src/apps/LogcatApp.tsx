@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle } from 'lucide-react';
-import { DeviceSelector } from '../components';
+// Imported by path, not through the barrel: the barrel drags Toolbar, VideoCanvas
+// and the rest into this view's chunk and undoes the code split.
+import { DeviceSelector } from '../components/DeviceSelector';
 import { useVSCodeMessages } from '../hooks';
 import type { AppProcess, DeviceListItem, ExtensionMessage, LogcatEntry } from '../types';
 import { EnhancedLogsPanel } from '../components/logs/EnhancedLogsPanel';
+import '../styles/logs.css';
 import '../styles/logcat.css';
 
 export default function LogcatApp() {
@@ -28,12 +31,17 @@ export default function LogcatApp() {
                 setManuallyStopped(false);
                 break;
 
-            case 'logcat-entry':
+            case 'logcat-batch': {
+                const incoming = message.entries;
+                if (incoming.length === 0) {
+                    break;
+                }
                 setLogEntries((prev) => {
-                    const next = [...prev, message.entry];
+                    const next = prev.concat(incoming);
                     return next.length > 2000 ? next.slice(next.length - 2000) : next;
                 });
                 break;
+            }
             case 'logcat-error':
                 setLogcatError(message.error);
                 break;
@@ -60,6 +68,16 @@ export default function LogcatApp() {
     }, []);
 
     const { postMessage } = useVSCodeMessages(handleMessage);
+
+    const handleSelectDeviceFromPicker = useCallback(
+        (id: string) => postMessage({ command: 'select-device', deviceId: id }),
+        [postMessage]
+    );
+
+    const handleRefreshDeviceList = useCallback(
+        () => postMessage({ command: 'get-device-list' }),
+        [postMessage]
+    );
 
     const handleStartStreaming = useCallback(
         (packageName?: string) => {
@@ -103,12 +121,16 @@ export default function LogcatApp() {
         }
     }, [selectedDeviceId, logcatRunning, manuallyStopped, handleStartStreaming]);
 
-    const errorCount = useMemo(() => {
-        return logEntries.filter((log) => log.level === 'E' || log.level === 'F').length;
-    }, [logEntries]);
-
-    const warningCount = useMemo(() => {
-        return logEntries.filter((log) => log.level === 'W').length;
+    // One pass, no intermediate arrays - `filter().length` allocated two arrays the
+    // size of the match set on every append just to read their lengths.
+    const { errorCount, warningCount } = useMemo(() => {
+        let errors = 0;
+        let warnings = 0;
+        for (const log of logEntries) {
+            if (log.level === 'E' || log.level === 'F') errors++;
+            else if (log.level === 'W') warnings++;
+        }
+        return { errorCount: errors, warningCount: warnings };
     }, [logEntries]);
 
     return (
@@ -148,10 +170,8 @@ export default function LogcatApp() {
                         devices={devices}
                         selectedDeviceId={selectedDeviceId}
                         dropdownPlacement="down"
-                        onSelectDevice={(id) =>
-                            postMessage({ command: 'select-device', deviceId: id })
-                        }
-                        onRefresh={() => postMessage({ command: 'get-device-list' })}
+                        onSelectDevice={handleSelectDeviceFromPicker}
+                        onRefresh={handleRefreshDeviceList}
                     />
                 </div>
             </div>

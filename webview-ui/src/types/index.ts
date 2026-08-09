@@ -149,6 +149,9 @@ export type WebviewMessage =
     | { command: 'back' }
     | { command: 'app-switch' }
     | { command: 'screenshot' }
+    // Result of writing a captured screenshot to the clipboard. Only the webview
+    // can do that write, so only the webview knows whether it worked.
+    | { command: 'screenshot-copied'; success: boolean; error?: string }
     | { command: 'open-file-manager' }
     | { command: 'open-shell-logs' }
     | { command: 'volume-up' }
@@ -162,15 +165,23 @@ export type WebviewMessage =
     | { command: 'set-persistent-mirroring'; enabled: boolean }
     | { command: 'pick-apk-files' }
     | { command: 'install-apk'; files?: string[] }
+    // The decoder needs an IDR: it just (re)configured, and every keyframe carries
+    // the SPS+PPS it needs. Without this it would wait for the encoder's next
+    // scheduled keyframe, which is seconds away.
+    | { command: 'video-request-keyframe' }
+    // The decode queue is running deep, or shallow again. Only the webview can see
+    // this; while saturated the extension forwards keyframes and nothing else.
+    | { command: 'video-backpressure'; saturated: boolean }
     | { command: 'get-device-info' }
     | { command: 'get-device-list' }
     | { command: 'select-device'; deviceId: string }
     | { command: 'fm-list-dir'; path: string; deviceId?: string }
     | { command: 'fm-open-file'; path: string; deviceId?: string }
     | { command: 'fm-delete'; path: string; isDir?: boolean; deviceId?: string }
-    | { command: 'get-app-list' }
-    | { command: 'get-recent-apps' }
-    | { command: 'get-debug-apps' }
+    // `refresh` bypasses the extension-side package cache (the UI refresh button)
+    | { command: 'get-app-list'; refresh?: boolean }
+    | { command: 'get-recent-apps'; refresh?: boolean }
+    | { command: 'get-debug-apps'; refresh?: boolean }
     | { command: 'launch-app'; packageName: string }
     // Shell & Logs
     | { command: 'shell-execute'; shellCommand: string }
@@ -198,9 +209,14 @@ export type ExtensionMessage =
     | { type: 'connecting' }
     | { type: 'connected' }
     | { type: 'disconnected' }
-    | { type: 'video'; data: string } // base64 encoded
+    | { type: 'video-config'; data: ArrayBuffer } // SPS+PPS, Annex-B
+    | { type: 'video'; k: 0 | 1; pts: number; data: ArrayBuffer } // exactly one access unit
     | { type: 'video-reset' } // discard decoder state and resync on the next keyframe
     | { type: 'error'; message: string }
+    | { type: 'screenshot-data'; data: ArrayBuffer } // PNG bytes, for the clipboard
+    // The capture itself failed. The extension has already shown the error; this
+    // exists so the webview can stop showing the capture as in flight.
+    | { type: 'screenshot-failed' }
     | { type: 'apk-files-selected'; paths: string[] }
     | { type: 'apk-install-status'; level: 'info' | 'warn' | 'error'; message: string }
     | { type: 'apk-install-result'; success: boolean; message: string }
@@ -219,7 +235,7 @@ export type ExtensionMessage =
     | { type: 'shell-quick-commands'; commands: QuickCommand[] }
     | { type: 'shell-history'; history: string[] }
     | { type: 'shell-suggestions'; suggestions: string[] }
-    | { type: 'logcat-entry'; entry: LogcatEntry }
+    | { type: 'logcat-batch'; entries: LogcatEntry[] }
     | { type: 'crash-detected'; crash: CrashLog }
     | { type: 'logcat-error'; error: string }
     | { type: 'logcat-started' }

@@ -1,13 +1,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as os from 'os';
 import * as fs from 'fs';
-import { ScrcpyService } from '../services/ScrcpyService';
+// Type-only: ScrcpyService drags in the @yume-chan protocol stack, ~63% of the
+// bundle, and is loaded on demand in _startStreaming() instead of at require() time.
+import type { ScrcpyService } from '../services/ScrcpyService';
+import { VideoFrameForwarder } from '../services/VideoFrameForwarder';
 import { DeviceInfoService } from '../services/DeviceInfoService';
 import { DeviceManager } from '../services/DeviceManager';
 import { AdbShellService } from '../services/AdbShellService';
 import { installApks } from '../services/ApkInstaller';
-import { FileManagerPanel } from './FileManagerPanel';
 
 export class ScrcpyPanel {
     public static currentPanel: ScrcpyPanel | undefined;
@@ -18,15 +19,11 @@ export class ScrcpyPanel {
     private readonly _context: vscode.ExtensionContext;
     private _disposables: vscode.Disposable[] = [];
     private _scrcpyService: ScrcpyService | null = null;
-    private _videoBuffer: Buffer[] = [];
-    private _videoBufferSize: number = 0; // Track total buffer size in bytes
-    private _sendVideoTimeout: NodeJS.Timeout | null = null;
+    private readonly _videoForwarder: VideoFrameForwarder;
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _adbShellService: AdbShellService;
-
-    // Maximum buffer size before dropping frames (2MB)
-    private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
+    private _isPanelVisible: boolean = true;
 
     public static createOrShow(context: vscode.ExtensionContext) {
         const column = vscode.window.activeTextEditor
@@ -66,6 +63,14 @@ export class ScrcpyPanel {
 
         this._adbShellService = new AdbShellService(context);
 
+        this._videoForwarder = new VideoFrameForwarder({
+            postMessage: (message) => this._panel.webview.postMessage(message),
+            // Nothing can be rendered while the tab is in the background, so the packet
+            // is dropped before it is posted.
+            isDeliverable: () => this._isPanelVisible,
+            requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
+        });
+
         // Initialize DeviceManager
         this._deviceManager = new DeviceManager(context, {
             onDeviceList: (devices) => {
@@ -82,6 +87,12 @@ export class ScrcpyPanel {
                 });
             },
         });
+
+        // A live mirror already proves which device is connected, so preferred-device
+        // lookups behind UI actions can skip `adb devices -l` entirely.
+        this._deviceManager.setActiveDeviceProvider(() =>
+            this._scrcpyService?.isActive() ? this._scrcpyService.getCurrentDeviceId() : null
+        );
 
         // Initialize DeviceInfoService
         this._deviceInfoService = new DeviceInfoService({
@@ -100,6 +111,35 @@ export class ScrcpyPanel {
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
+        // The panel keeps `retainContextWhenHidden`, so nothing tears itself down when
+        // the tab moves to the background. Without this handler the scrcpy read loop,
+        // the encode + IPC path and the device-info poll all stay hot for zero pixels.
+        this._panel.onDidChangeViewState(
+            () => {
+                const wasVisible = this._isPanelVisible;
+                this._isPanelVisible = this._panel.visible;
+
+                if (this._isPanelVisible === wasVisible) {
+                    return;
+                }
+
+                if (this._isPanelVisible) {
+                    this._deviceInfoService?.resumePolling();
+                    if (this._scrcpyService?.isActive()) {
+                        this._resyncVideoStream();
+                    }
+                } else {
+                    this._deviceInfoService?.pausePolling();
+                    // Deliberately not reset(): that drops the cached SPS+PPS, and
+                    // this stream sends them exactly once, so the keyframe on reveal
+                    // would arrive unconfigurable and the canvas would stay black.
+                    // isDeliverable() already opens the gap for every hidden packet.
+                }
+            },
+            null,
+            this._disposables
+        );
+
         this._panel.webview.onDidReceiveMessage(
             async (message) => {
                 switch (message.command) {
@@ -108,6 +148,12 @@ export class ScrcpyPanel {
                         break;
                     case 'stop':
                         this._stopStreaming();
+                        break;
+                    case 'video-request-keyframe':
+                        this._scrcpyService?.requestKeyFrame();
+                        break;
+                    case 'video-backpressure':
+                        this._videoForwarder.setSaturated(message.saturated === true);
                         break;
                     case 'ready':
                         // Send initial device list
@@ -131,6 +177,9 @@ export class ScrcpyPanel {
                     case 'screenshot':
                         this._handleScreenshot();
                         break;
+                    case 'screenshot-copied':
+                        this._handleScreenshotCopied(message);
+                        break;
                     case 'scroll':
                         this._handleScroll(message);
                         break;
@@ -149,17 +198,23 @@ export class ScrcpyPanel {
                     case 'install-apk':
                         await this._handleInstallApk(message.files);
                         break;
-                    case 'open-file-manager':
+                    // Panels are required lazily so opening the mirror does not also
+                    // parse and evaluate three panels the user may never open.
+                    case 'open-file-manager': {
+                        const { FileManagerPanel } = require('./FileManagerPanel');
                         FileManagerPanel.createOrShow(this._context);
                         break;
-                    case 'open-logcat':
+                    }
+                    case 'open-logcat': {
                         const { LogcatPanel } = require('./LogcatPanel');
                         LogcatPanel.createOrShow(this._context);
                         break;
-                    case 'open-shell-logs':
+                    }
+                    case 'open-shell-logs': {
                         const { ShellLogsPanel } = require('./ShellLogsPanel');
                         ShellLogsPanel.createOrShow(this._context);
                         break;
+                    }
                     case 'volume-up':
                         await this._handleVolumeUp();
                         break;
@@ -300,40 +355,13 @@ export class ScrcpyPanel {
         // Get preferred device or first available
         const deviceId = (await this._deviceManager?.getPreferredDevice()) || null;
 
+        // First mirror start of the session pays for loading the protocol stack;
+        // opening the panel does not.
+        const { ScrcpyService } = await import('../services/ScrcpyService');
+
         this._scrcpyService = new ScrcpyService(
             {
-                onVideoData: (data) => {
-                    // Buffer video data and send in batches for better performance
-                    // Check buffer size limit to prevent unbounded memory growth
-                    if (this._videoBufferSize + data.length > ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE) {
-                        // Buffer is too large, drop old frames to make room
-                        console.warn(
-                            `Video buffer exceeded ${ScrcpyPanel.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`
-                        );
-                        this._videoBuffer = [];
-                        this._videoBufferSize = 0;
-                    }
-
-                    this._videoBuffer.push(data);
-                    this._videoBufferSize += data.length;
-
-                    if (!this._sendVideoTimeout) {
-                        this._sendVideoTimeout = setTimeout(() => {
-                            if (this._videoBuffer.length > 0) {
-                                const combined = Buffer.concat(this._videoBuffer);
-                                this._videoBuffer = [];
-                                this._videoBufferSize = 0;
-                                // Use base64 encoding instead of Array.from() for much better performance
-                                // base64 is ~33% larger but avoids the massive overhead of JSON serializing arrays
-                                this._panel.webview.postMessage({
-                                    type: 'video',
-                                    data: combined.toString('base64'),
-                                });
-                            }
-                            this._sendVideoTimeout = null;
-                        }, 8); // ~120fps batching for lower latency
-                    }
-                },
+                onVideoPacket: this._videoForwarder.handlePacket,
                 onError: (error) => {
                     vscode.window.showErrorMessage(`Scrcpy Error: ${error}`);
                     this._panel.webview.postMessage({
@@ -370,14 +398,17 @@ export class ScrcpyPanel {
     }
 
     private _stopStreaming() {
-        if (this._sendVideoTimeout) {
-            clearTimeout(this._sendVideoTimeout);
-            this._sendVideoTimeout = null;
-        }
-        this._videoBuffer = [];
-        this._videoBufferSize = 0;
+        this._videoForwarder.reset();
         this._scrcpyService?.stop();
         this._scrcpyService = null;
+    }
+
+    /**
+     * Recovers the webview decoder after a gap in the forwarded stream (e.g. the
+     * panel was hidden). Anything still buffered belongs to the old GOP.
+     */
+    private _resyncVideoStream(): void {
+        this._videoForwarder.resync();
     }
 
     private _handleTouchEvent(message: any) {
@@ -639,30 +670,37 @@ export class ScrcpyPanel {
     private async _handleScreenshot() {
         if (!this._scrcpyService || !this._scrcpyService.isActive()) {
             vscode.window.showWarningMessage('Connect to a device before taking a screenshot.');
-            return;
-        }
-
-        const defaultDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-        const defaultFileName = `scrcpy-screenshot-${new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')}.png`;
-
-        const targetUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(path.join(defaultDir, defaultFileName)),
-            filters: { 'PNG Image': ['png'] },
-            saveLabel: 'Save Screenshot',
-        });
-
-        if (!targetUri) {
+            this._panel.webview.postMessage({ type: 'screenshot-failed' });
             return;
         }
 
         try {
             const image = await this._scrcpyService.captureScreenshot();
-            await vscode.workspace.fs.writeFile(targetUri, image);
-            vscode.window.showInformationMessage(`Screenshot saved to ${targetUri.fsPath}`);
+            // `vscode.env.clipboard` is text-only, so the webview does the write and
+            // reports back with `screenshot-copied`. Slicing to exact bounds keeps the
+            // ArrayBuffer transferable rather than cloned.
+            this._panel.webview.postMessage({
+                type: 'screenshot-data',
+                data: image.buffer.slice(
+                    image.byteOffset,
+                    image.byteOffset + image.byteLength
+                ) as ArrayBuffer,
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to take screenshot: ${message}`);
+            this._panel.webview.postMessage({ type: 'screenshot-failed' });
         }
+    }
+
+    private _handleScreenshotCopied(message: { success?: boolean; error?: string }) {
+        if (message.success) {
+            vscode.window.showInformationMessage('Screenshot copied to clipboard');
+            return;
+        }
+        vscode.window.showErrorMessage(
+            `Failed to copy screenshot: ${message.error || 'clipboard unavailable'}`
+        );
     }
 
     private _handleScroll(message: any) {

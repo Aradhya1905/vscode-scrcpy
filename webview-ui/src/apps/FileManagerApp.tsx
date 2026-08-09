@@ -16,9 +16,12 @@ import {
     CheckCircle2,
     Trash2,
 } from 'lucide-react';
-import { DeviceSelector } from '../components';
+// Imported by path, not through the barrel: the barrel drags Toolbar, VideoCanvas
+// and the rest into this view's chunk and undoes the code split.
+import { DeviceSelector } from '../components/DeviceSelector';
 import { useVSCodeMessages } from '../hooks';
 import type { DeviceFsEntry, DeviceListItem, ExtensionMessage } from '../types';
+import '../styles/fileManager.css';
 
 type InitialState = {
     view?: string;
@@ -132,6 +135,16 @@ export default function FileManagerApp() {
     );
 
     const { postMessage } = useVSCodeMessages(handleMessage);
+
+    const handleSelectDeviceFromPicker = useCallback(
+        (id: string) => postMessage({ command: 'select-device', deviceId: id }),
+        [postMessage]
+    );
+
+    const handleRefreshDeviceList = useCallback(
+        () => postMessage({ command: 'get-device-list' }),
+        [postMessage]
+    );
 
     const requestList = useCallback(
         (pathToList: string) => {
@@ -330,10 +343,8 @@ export default function FileManagerApp() {
                         devices={devices}
                         selectedDeviceId={selectedDeviceId}
                         dropdownPlacement="down"
-                        onSelectDevice={(id) =>
-                            postMessage({ command: 'select-device', deviceId: id })
-                        }
-                        onRefresh={() => postMessage({ command: 'get-device-list' })}
+                        onSelectDevice={handleSelectDeviceFromPicker}
+                        onRefresh={handleRefreshDeviceList}
                     />
                     <button
                         className="fm-icon-btn focus-ring"

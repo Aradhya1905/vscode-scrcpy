@@ -6,7 +6,6 @@ import {
     FolderOpen,
     Camera,
     Terminal,
-    WifiCog,
     BugPlay,
     ChevronRight,
     Smartphone,
@@ -541,57 +540,6 @@ export function MorePanel({
                                 </div>
                                 <div style={{ fontSize: 10, color: 'var(--vsc-text-muted)' }}>
                                     Real-time Android device logs
-                                </div>
-                            </div>
-                            <ChevronRight size={10} color="var(--vsc-text-muted)" />
-                        </button>
-
-                        <button
-                            style={{
-                                width: '100%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 12,
-                                padding: 12,
-                                background: 'transparent',
-                                border: 'none',
-                                borderRadius: 12,
-                                cursor: 'not-allowed',
-                                transition: 'all 0.15s ease',
-                                textAlign: 'left',
-                                opacity: 0.65,
-                            }}
-                            className="setting-item"
-                            disabled
-                            title="Coming soon"
-                        >
-                            <div
-                                style={{
-                                    width: 36,
-                                    height: 36,
-                                    borderRadius: 8,
-                                    background:
-                                        'linear-gradient(to bottom right, rgba(63, 185, 80, 0.2), rgba(63, 185, 80, 0.1))',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    flexShrink: 0,
-                                }}
-                            >
-                                <WifiCog size={16} strokeWidth={2.25} color="var(--vsc-green)" />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <div
-                                    style={{
-                                        fontSize: 14,
-                                        fontWeight: 500,
-                                        color: 'var(--vsc-text)',
-                                    }}
-                                >
-                                    Network Inspector
-                                </div>
-                                <div style={{ fontSize: 10, color: 'var(--vsc-text-muted)' }}>
-                                    Inspect device connectivity (coming soon)
                                 </div>
                             </div>
                             <ChevronRight size={10} color="var(--vsc-text-muted)" />

@@ -1,15 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as os from 'os';
 import * as fs from 'fs';
-import { ScrcpyService } from '../services/ScrcpyService';
+// Type-only: ScrcpyService drags in the @yume-chan protocol stack, ~63% of the
+// bundle, and is loaded on demand in _startStreaming() instead of at activation.
+import type { ScrcpyService } from '../services/ScrcpyService';
+import { VideoFrameForwarder } from '../services/VideoFrameForwarder';
 import { DeviceInfoService } from '../services/DeviceInfoService';
 import { DeviceManager } from '../services/DeviceManager';
 import { AppManager } from '../services/AppManager';
 import { AdbShellService } from '../services/AdbShellService';
 import { installApks } from '../services/ApkInstaller';
-import { FileManagerPanel } from '../panels/FileManagerPanel';
-import { ShellLogsPanel } from '../panels/ShellLogsPanel';
 
 export class ScrcpySidebarView {
     public static currentView: ScrcpySidebarView | undefined;
@@ -20,9 +20,7 @@ export class ScrcpySidebarView {
     private readonly _context: vscode.ExtensionContext;
     private _disposables: vscode.Disposable[] = [];
     private _scrcpyService: ScrcpyService | null = null;
-    private _videoBuffer: Buffer[] = [];
-    private _videoBufferSize: number = 0; // Track total buffer size in bytes
-    private _sendVideoTimeout: NodeJS.Timeout | null = null;
+    private readonly _videoForwarder: VideoFrameForwarder;
     private _deviceInfoService: DeviceInfoService | null = null;
     private _deviceManager: DeviceManager | null = null;
     private _appManager: AppManager | null = null;
@@ -31,12 +29,13 @@ export class ScrcpySidebarView {
     private _isViewVisible: boolean = true;
     private _adbShellService: AdbShellService;
 
-    // Maximum buffer size before dropping frames (2MB)
-    private static readonly MAX_VIDEO_BUFFER_SIZE = 2 * 1024 * 1024;
-
     // Mirrors the webview's persistent mirroring setting so the extension knows the
     // mode before the webview has finished loading its settings and reported in
     private static readonly PERSISTENT_MIRRORING_KEY = 'scrcpy.persistentMirroring';
+
+    // Target of the error surface's "Troubleshooting" action
+    private static readonly TROUBLESHOOTING_URL =
+        'https://github.com/Aradhya1905/vscode-scrcpy#troubleshooting';
 
     public static revive(webviewView: vscode.WebviewView, context: vscode.ExtensionContext) {
         ScrcpySidebarView.currentView = new ScrcpySidebarView(webviewView, context);
@@ -48,6 +47,14 @@ export class ScrcpySidebarView {
         this._context = context;
 
         this._adbShellService = new AdbShellService(context);
+
+        this._videoForwarder = new VideoFrameForwarder({
+            postMessage: (message) => this._view.webview.postMessage(message),
+            // In persistent mode the stream stays alive while the view is hidden, but
+            // nothing can be rendered, so the packet is dropped before it is posted.
+            isDeliverable: () => !(this._persistentMirroringEnabled && !this._isViewVisible),
+            requestKeyFrame: () => this._scrcpyService?.requestKeyFrame(),
+        });
 
         this._persistentMirroringEnabled = context.globalState.get<boolean>(
             ScrcpySidebarView.PERSISTENT_MIRRORING_KEY,
@@ -76,6 +83,12 @@ export class ScrcpySidebarView {
                 });
             },
         });
+
+        // A live mirror already proves which device is connected, so preferred-device
+        // lookups behind UI actions can skip `adb devices -l` entirely.
+        this._deviceManager.setActiveDeviceProvider(() =>
+            this._scrcpyService?.isActive() ? this._scrcpyService.getCurrentDeviceId() : null
+        );
 
         // Initialize DeviceInfoService
         this._deviceInfoService = new DeviceInfoService({
@@ -127,6 +140,16 @@ export class ScrcpySidebarView {
             async () => {
                 const wasVisible = this._isViewVisible;
                 this._isViewVisible = this._view.visible;
+
+                // Device info paints nothing while hidden. Gate it independently of
+                // persistent mirroring, which otherwise keeps the poll running for a
+                // surface no one can see.
+                if (this._view.visible) {
+                    this._deviceInfoService?.resumePolling();
+                } else {
+                    this._deviceInfoService?.pausePolling();
+                }
+
                 if (this._view.visible) {
                     if (
                         this._persistentMirroringEnabled &&
@@ -139,8 +162,6 @@ export class ScrcpySidebarView {
                         this._wasStreamingBeforeHidden
                     ) {
                         this._wasStreamingBeforeHidden = false;
-                        // Small delay to let ADB settle after previous stop
-                        await new Promise((resolve) => setTimeout(resolve, 500));
                         try {
                             await this._startStreaming();
                         } catch (error) {
@@ -181,6 +202,12 @@ export class ScrcpySidebarView {
                     case 'stop':
                         this._stopStreaming();
                         break;
+                    case 'video-request-keyframe':
+                        this._scrcpyService?.requestKeyFrame();
+                        break;
+                    case 'video-backpressure':
+                        this._videoForwarder.setSaturated(message.saturated === true);
+                        break;
                     case 'ready':
                         // Send initial device list
                         await this._deviceManager?.refreshDeviceList();
@@ -203,6 +230,9 @@ export class ScrcpySidebarView {
                     case 'screenshot':
                         this._handleScreenshot();
                         break;
+                    case 'screenshot-copied':
+                        this._handleScreenshotCopied(message);
+                        break;
                     case 'scroll':
                         this._handleScroll(message);
                         break;
@@ -216,13 +246,13 @@ export class ScrcpySidebarView {
                         await this._handleSelectDevice(message.deviceId);
                         break;
                     case 'get-app-list':
-                        await this._handleGetAppList();
+                        await this._handleGetAppList(message.refresh === true);
                         break;
                     case 'get-recent-apps':
-                        await this._handleGetRecentApps();
+                        await this._handleGetRecentApps(message.refresh === true);
                         break;
                     case 'get-debug-apps':
-                        await this._handleGetDebugApps();
+                        await this._handleGetDebugApps(message.refresh === true);
                         break;
                     case 'launch-app':
                         await this._handleLaunchApp(message.packageName);
@@ -233,16 +263,23 @@ export class ScrcpySidebarView {
                     case 'install-apk':
                         await this._handleInstallApk(message.files);
                         break;
-                    case 'open-file-manager':
+                    // Panels are required lazily so opening the sidebar does not also
+                    // parse and evaluate three panels the user may never open.
+                    case 'open-file-manager': {
+                        const { FileManagerPanel } = require('../panels/FileManagerPanel');
                         FileManagerPanel.createOrShow(this._context);
                         break;
-                    case 'open-shell-logs':
+                    }
+                    case 'open-shell-logs': {
+                        const { ShellLogsPanel } = require('../panels/ShellLogsPanel');
                         ShellLogsPanel.createOrShow(this._context);
                         break;
-                    case 'open-logcat':
+                    }
+                    case 'open-logcat': {
                         const { LogcatPanel } = require('../panels/LogcatPanel');
                         LogcatPanel.createOrShow(this._context);
                         break;
+                    }
                     case 'volume-up':
                         await this._handleVolumeUp();
                         break;
@@ -269,6 +306,17 @@ export class ScrcpySidebarView {
                         break;
                     case 'paste':
                         await this._handlePaste(message.text);
+                        break;
+                    case 'check-devices':
+                        await this._handleCheckDevices();
+                        break;
+                    case 'restart-adb-server':
+                        await this._handleRestartAdbServer();
+                        break;
+                    case 'open-troubleshooting':
+                        await vscode.env.openExternal(
+                            vscode.Uri.parse(ScrcpySidebarView.TROUBLESHOOTING_URL)
+                        );
                         break;
                     case 'set-persistent-mirroring': {
                         const enabled = !!message.enabled;
@@ -383,6 +431,67 @@ export class ScrcpySidebarView {
         }
     }
 
+    /**
+     * Runs `adb devices -l` and hands the raw output back to the error surface.
+     *
+     * The point is to show the user the `unauthorized` / `offline` line itself
+     * rather than a paraphrase of it - the same thing they would run in a
+     * terminal, read-only, and with no device-state mutation.
+     */
+    private async _handleCheckDevices(): Promise<void> {
+        try {
+            const result = await this._adbShellService.executeHostCommand(['devices', '-l']);
+            const output = [result.stdout, result.stderr].filter(Boolean).join('\n');
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'check-devices',
+                success: result.exitCode === 0,
+                output: output || 'adb devices produced no output.',
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'check-devices',
+                success: false,
+                output: message,
+            });
+        }
+    }
+
+    /**
+     * `adb kill-server && adb start-server`, the fix for a large share of real
+     * connection failures. It restarts the *host* daemon only - nothing on the
+     * device is touched - and refreshes the device list once it comes back.
+     */
+    private async _handleRestartAdbServer(): Promise<void> {
+        try {
+            const kill = await this._adbShellService.executeHostCommand(['kill-server']);
+            const start = await this._adbShellService.executeHostCommand(['start-server']);
+            const success = kill.exitCode === 0 && start.exitCode === 0;
+            const output =
+                [kill.stdout, kill.stderr, start.stdout, start.stderr].filter(Boolean).join('\n') ||
+                (success ? 'adb server restarted.' : 'adb server restart reported no output.');
+
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'restart-adb-server',
+                success,
+                output,
+            });
+
+            await this._deviceManager?.refreshDeviceList();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            this._view.webview.postMessage({
+                type: 'diagnostic-result',
+                action: 'restart-adb-server',
+                success: false,
+                output: message,
+            });
+        }
+    }
+
     private async _startStreaming() {
         if (this._scrcpyService?.isActive()) {
             return;
@@ -391,52 +500,24 @@ export class ScrcpySidebarView {
         // Get preferred device or first available
         const deviceId = (await this._deviceManager?.getPreferredDevice()) || null;
 
+        // First mirror start of the session pays for loading the protocol stack;
+        // activation does not.
+        const { ScrcpyService } = await import('../services/ScrcpyService');
+
         this._scrcpyService = new ScrcpyService(
             {
-                onVideoData: (data) => {
-                    // In persistent mode, skip hidden-view frame forwarding to save CPU.
-                    if (this._persistentMirroringEnabled && !this._isViewVisible) {
-                        return;
-                    }
-
-                    // Buffer video data and send in batches for better performance
-                    // Check buffer size limit to prevent unbounded memory growth
-                    if (
-                        this._videoBufferSize + data.length >
-                        ScrcpySidebarView.MAX_VIDEO_BUFFER_SIZE
-                    ) {
-                        // Buffer is too large, drop old frames to make room
-                        console.warn(
-                            `Video buffer exceeded ${ScrcpySidebarView.MAX_VIDEO_BUFFER_SIZE} bytes, dropping old frames`
-                        );
-                        this._videoBuffer = [];
-                        this._videoBufferSize = 0;
-                    }
-
-                    this._videoBuffer.push(data);
-                    this._videoBufferSize += data.length;
-
-                    if (!this._sendVideoTimeout) {
-                        this._sendVideoTimeout = setTimeout(() => {
-                            if (this._videoBuffer.length > 0) {
-                                const combined = Buffer.concat(this._videoBuffer);
-                                this._videoBuffer = [];
-                                this._videoBufferSize = 0;
-                                // Use base64 encoding instead of Array.from() for much better performance
-                                this._view.webview.postMessage({
-                                    type: 'video',
-                                    data: combined.toString('base64'),
-                                });
-                            }
-                            this._sendVideoTimeout = null;
-                        }, 8); // ~120fps batching for lower latency
-                    }
-                },
+                onVideoPacket: this._videoForwarder.handlePacket,
                 onError: (error) => {
                     vscode.window.showErrorMessage(`Scrcpy Error: ${error}`);
                     this._view.webview.postMessage({
                         type: 'error',
                         message: error,
+                    });
+                },
+                onProgress: (stage) => {
+                    this._view.webview.postMessage({
+                        type: 'connect-progress',
+                        stage,
                     });
                 },
                 onConnected: () => {
@@ -470,12 +551,7 @@ export class ScrcpySidebarView {
     }
 
     private _stopStreaming() {
-        if (this._sendVideoTimeout) {
-            clearTimeout(this._sendVideoTimeout);
-            this._sendVideoTimeout = null;
-        }
-        this._videoBuffer = [];
-        this._videoBufferSize = 0;
+        this._videoForwarder.reset();
         this._scrcpyService?.stop();
         this._scrcpyService = null;
     }
@@ -769,30 +845,37 @@ export class ScrcpySidebarView {
     private async _handleScreenshot() {
         if (!this._scrcpyService || !this._scrcpyService.isActive()) {
             vscode.window.showWarningMessage('Connect to a device before taking a screenshot.');
-            return;
-        }
-
-        const defaultDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-        const defaultFileName = `scrcpy-screenshot-${new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '')}.png`;
-
-        const targetUri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(path.join(defaultDir, defaultFileName)),
-            filters: { 'PNG Image': ['png'] },
-            saveLabel: 'Save Screenshot',
-        });
-
-        if (!targetUri) {
+            this._view?.webview.postMessage({ type: 'screenshot-failed' });
             return;
         }
 
         try {
             const image = await this._scrcpyService.captureScreenshot();
-            await vscode.workspace.fs.writeFile(targetUri, image);
-            vscode.window.showInformationMessage(`Screenshot saved to ${targetUri.fsPath}`);
+            // `vscode.env.clipboard` is text-only, so the webview does the write and
+            // reports back with `screenshot-copied`. Slicing to exact bounds keeps the
+            // ArrayBuffer transferable rather than cloned.
+            this._view?.webview.postMessage({
+                type: 'screenshot-data',
+                data: image.buffer.slice(
+                    image.byteOffset,
+                    image.byteOffset + image.byteLength
+                ) as ArrayBuffer,
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             vscode.window.showErrorMessage(`Failed to take screenshot: ${message}`);
+            this._view?.webview.postMessage({ type: 'screenshot-failed' });
         }
+    }
+
+    private _handleScreenshotCopied(message: { success?: boolean; error?: string }) {
+        if (message.success) {
+            vscode.window.showInformationMessage('Screenshot copied to clipboard');
+            return;
+        }
+        vscode.window.showErrorMessage(
+            `Failed to copy screenshot: ${message.error || 'clipboard unavailable'}`
+        );
     }
 
     private _handleScroll(message: any) {
@@ -827,9 +910,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    private async _handleGetAppList() {
+    private async _handleGetAppList(refresh = false) {
         try {
-            await this._appManager?.getInstalledApps();
+            await this._appManager?.getInstalledApps(refresh);
         } catch (error) {
             console.error('Failed to get app list:', error);
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -845,9 +928,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    private async _handleGetRecentApps() {
+    private async _handleGetRecentApps(refresh = false) {
         try {
-            await this._appManager?.getRecentApps();
+            await this._appManager?.getRecentApps(refresh);
         } catch (error) {
             console.error('Failed to get recent apps:', error);
             // Send empty list on error
@@ -858,9 +941,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    private async _handleGetDebugApps() {
+    private async _handleGetDebugApps(refresh = false) {
         try {
-            await this._appManager?.getDebugApps();
+            await this._appManager?.getDebugApps(refresh);
         } catch (error) {
             console.error('Failed to get debug apps:', error);
             // Send empty list on error
@@ -887,24 +970,9 @@ export class ScrcpySidebarView {
         }
     }
 
-    /**
-     * Resyncs the webview decoder after a gap in the forwarded video stream.
-     *
-     * In persistent mode frames are skipped while the view is hidden, so the decoder
-     * survives the gap holding references to frames it never received - resuming
-     * mid-GOP would show corruption, or error the decoder outright, until the next
-     * scheduled keyframe (the scrcpy server default is ~10s apart). Clearing the
-     * decoder makes it ignore everything until it sees SPS/PPS/IDR again, and the
-     * keyframe request makes that arrive in milliseconds rather than seconds.
-     */
+    /** Resyncs the webview decoder after a gap in the forwarded video stream. */
     private _resyncVideoStream(): void {
-        // Drop anything buffered from before the gap - it belongs to the old GOP
-        this._videoBuffer = [];
-        this._videoBufferSize = 0;
-
-        // Ordering matters: the reset must reach the webview before the new frames do
-        this._view.webview.postMessage({ type: 'video-reset' });
-        this._scrcpyService?.requestKeyFrame();
+        this._videoForwarder.resync();
     }
 
     public dispose() {

@@ -15,12 +15,25 @@ import {
     ScrcpyMediaStreamPacket,
 } from '@yume-chan/scrcpy';
 import { ReadableStream } from '@yume-chan/stream-extra';
+import { AdbCommandRunner } from './AdbCommandRunner';
+import type { ScrcpyVideoPacket } from './VideoFrameForwarder';
+
+/**
+ * The steps between "start" and the first decoded frame. Starting a stream
+ * pushes the server jar, launches it, then waits for the video socket to hand
+ * over its first packet - on a cold device that is several seconds, so the
+ * webview labels the stage instead of showing one undifferentiated spinner.
+ * See docs/changes/06-state-surfaces.md
+ */
+export type ScrcpyConnectStage = 'pushing-server' | 'starting' | 'awaiting-video';
 
 export interface ScrcpyServiceEvents {
-    onVideoData: (data: Buffer) => void;
+    onVideoPacket: (packet: ScrcpyVideoPacket) => void;
     onError: (error: string) => void;
     onConnected: () => void;
     onDisconnected: () => void;
+    /** Optional: consumers that don't render progress can omit it */
+    onProgress?: (stage: ScrcpyConnectStage) => void;
 }
 
 export interface ScrcpySettings {
@@ -30,6 +43,9 @@ export interface ScrcpySettings {
 }
 
 export class ScrcpyService {
+    /** How long the video stream may go quiet before the watchdog reports a stall. */
+    private static readonly VIDEO_STALL_TIMEOUT_MS = 10000;
+
     private adbClient: AdbServerClient | null = null;
     private adb: Adb | null = null;
     private scrcpyClient: AdbScrcpyClient<AdbScrcpyOptions3_3_3<true>> | null = null;
@@ -42,6 +58,10 @@ export class ScrcpyService {
     private extensionPath: string;
     private settings: ScrcpySettings = {};
     private streamAbortController: AbortController | null = null;
+    private ptsBase: number | null = null;
+    private lastPts = 0;
+    /** Withdraws this session's device handle from AdbCommandRunner. */
+    private unregisterSocket: (() => void) | null = null;
 
     constructor(events: ScrcpyServiceEvents, extensionPath: string) {
         this.events = events;
@@ -85,13 +105,23 @@ export class ScrcpyService {
             // Step 3: Create ADB connection to device
             this.adb = await this.adbClient.createAdb(selectedDevice);
 
+            // This connection is authenticated, idle between video packets, and
+            // multiplexes streams - so every other service's one-shot commands can
+            // ride it instead of spawning their own adb client.
+            this.unregisterSocket = AdbCommandRunner.registerSocket(
+                selectedDevice.serial,
+                this.adb
+            );
+
             // Step 4: Push scrcpy server to device
+            this.events.onProgress?.('pushing-server');
             await this.pushServer();
 
             // Set running flag BEFORE starting scrcpy so video stream loop works
             this.isRunning = true;
 
             // Step 5: Start scrcpy
+            this.events.onProgress?.('starting');
             await this.startScrcpy();
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -164,6 +194,8 @@ export class ScrcpyService {
 
         // Handle video stream
         if (this.scrcpyClient.videoStream) {
+            // The server is up; everything from here is waiting on the device
+            this.events.onProgress?.('awaiting-video');
             const videoStream = await this.scrcpyClient.videoStream;
 
             // Get initial video size
@@ -206,76 +238,86 @@ export class ScrcpyService {
         this.streamAbortController = new AbortController();
         const abortSignal = this.streamAbortController.signal;
 
+        this.ptsBase = null;
+        this.lastPts = 0;
+
+        const reader = stream.getReader();
+
+        // The stream is a native WHATWG ReadableStream, so cancel() settles any
+        // in-flight read() with { done: true }. That ends the loop below without
+        // racing a timeout Promise against the read - which is what previously
+        // left an orphaned read pending, swallowing the next packet (a config or
+        // IDR loss froze the picture for a whole GOP).
+        const cancelRead = () => {
+            reader.cancel().catch(() => {
+                // Already closed or errored; nothing to unwind.
+            });
+        };
+
+        // One timer for the whole session, rearmed with refresh() per packet
+        // instead of allocating a Promise + closure + timeout + listener pair
+        // every read. A gap is not an error: with the screen off scrcpy sends
+        // nothing for as long as the display stays static, so the watchdog only
+        // reports the stall and leaves the stream open to resume. setTimeout is
+        // one-shot, so this logs once per gap rather than every interval.
+        const stallTimer = setTimeout(() => {
+            if (this.isRunning) {
+                console.warn(
+                    `No video packets for ${ScrcpyService.VIDEO_STALL_TIMEOUT_MS}ms; stream idle`
+                );
+            }
+        }, ScrcpyService.VIDEO_STALL_TIMEOUT_MS);
+
         try {
-            const reader = stream.getReader();
-            let packetCount = 0;
-
-            // Wrap reader.read() with timeout to prevent infinite hang
-            const readWithTimeout = async (
-                timeoutMs: number = 10000
-            ): Promise<{ done: boolean; value?: ScrcpyMediaStreamPacket }> => {
-                return new Promise((resolve, reject) => {
-                    // Check if already aborted
-                    if (abortSignal.aborted) {
-                        reject(new Error('Stream aborted'));
-                        return;
-                    }
-
-                    const timeoutId = setTimeout(() => {
-                        reject(new Error('Video stream read timeout'));
-                    }, timeoutMs);
-
-                    // Listen for abort signal
-                    const abortHandler = () => {
-                        clearTimeout(timeoutId);
-                        reject(new Error('Stream aborted'));
-                    };
-                    abortSignal.addEventListener('abort', abortHandler, { once: true });
-
-                    reader
-                        .read()
-                        .then((result) => {
-                            clearTimeout(timeoutId);
-                            abortSignal.removeEventListener('abort', abortHandler);
-                            resolve(result);
-                        })
-                        .catch((err) => {
-                            clearTimeout(timeoutId);
-                            abortSignal.removeEventListener('abort', abortHandler);
-                            reject(err);
-                        });
-                });
-            };
+            if (abortSignal.aborted) {
+                cancelRead();
+            } else {
+                abortSignal.addEventListener('abort', cancelRead, { once: true });
+            }
 
             while (this.isRunning) {
-                try {
-                    const { done, value } = await readWithTimeout(10000); // 10 second timeout
-                    if (done || !value) {
-                        break;
-                    }
-
-                    packetCount++;
-
-                    // Send video data to webview
-                    if (value.data) {
-                        this.events.onVideoData(Buffer.from(value.data));
-                    }
-                } catch (readError) {
-                    if (readError instanceof Error) {
-                        // On abort, exit the loop
-                        if (readError.message.includes('aborted')) {
-                            console.warn('Video stream aborted');
-                            break;
-                        }
-                        // On timeout, just continue - device might be idle
-                        if (readError.message.includes('timeout')) {
-                            // Don't log every timeout to avoid spam
-                            continue;
-                        }
-                    }
-                    throw readError;
+                const { done, value } = await reader.read();
+                if (done || !value) {
+                    break;
                 }
+
+                stallTimer.refresh();
+
+                if (!value.data || value.data.length === 0) {
+                    continue;
+                }
+
+                // value.data is a subarray view into the shared socket read buffer,
+                // so it has to be copied synchronously here and can never be
+                // retained. A plain Uint8Array rather than Buffer.from: Buffer
+                // allocates from a shared pool, whose .buffer is a slab far larger
+                // than the packet, and the forwarder posts .buffer directly.
+                const data = new Uint8Array(value.data.length);
+                data.set(value.data);
+
+                if (value.type === 'configuration') {
+                    this.events.onVideoPacket({ type: 'config', data });
+                    continue;
+                }
+
+                // The keyframe flag and pts travel with the packet: the forwarder
+                // needs the flag to know where a dropped stream may resume, and the
+                // webview needs the real timestamp instead of synthesizing one from
+                // arrival time.
+                this.events.onVideoPacket({
+                    type: 'frame',
+                    data,
+                    keyframe: value.keyframe === true,
+                    pts: this.rebasePts(value.pts),
+                });
             }
+        } catch (error) {
+            if (this.isRunning) {
+                console.error('Error processing video stream:', error);
+            }
+        } finally {
+            clearTimeout(stallTimer);
+            abortSignal.removeEventListener('abort', cancelRead);
 
             // Release the reader lock
             try {
@@ -283,13 +325,35 @@ export class ScrcpyService {
             } catch {
                 // Ignore if already released
             }
-        } catch (error) {
-            if (this.isRunning) {
-                console.error('Error processing video stream:', error);
-            }
-        } finally {
+
             this.streamAbortController = null;
         }
+    }
+
+    /**
+     * Device presentation timestamps, as plain microsecond numbers relative to the
+     * first frame of the session.
+     *
+     * Two reasons not to forward the raw value: a bigint is not cloneable through
+     * VS Code's postMessage path, and `resetVideo()` restarts the encoder, which can
+     * restart its timestamps too. A backwards timestamp makes the decoder reject the
+     * chunk, so the series is rebased on any jump and forced to keep increasing.
+     */
+    private rebasePts(pts: bigint | undefined): number {
+        if (pts === undefined) {
+            // No frame metadata; advance by a nominal frame so the series still moves.
+            this.lastPts += 1000;
+            return this.lastPts;
+        }
+
+        const micros = Number(pts);
+        if (this.ptsBase === null || micros < this.ptsBase) {
+            this.ptsBase = micros - this.lastPts;
+        }
+
+        const rebased = micros - this.ptsBase;
+        this.lastPts = rebased > this.lastPts ? rebased : this.lastPts + 1;
+        return this.lastPts;
     }
 
     private async processOutputMessages(): Promise<void> {
@@ -346,17 +410,22 @@ export class ScrcpyService {
                     return;
             }
 
-            this.controller.injectTouch({
-                action: androidAction,
-                pointerId: BigInt(0),
-                pointerX: x,
-                pointerY: y,
-                videoWidth: videoWidth,
-                videoHeight: videoHeight,
-                pressure: pressure,
-                actionButton: buttons,
-                buttons: buttons,
-            });
+            // These writers are async, so the enclosing try/catch only ever sees a
+            // synchronous throw. A disconnect mid-gesture rejects instead, which
+            // without this handler is an unhandled rejection.
+            this.controller
+                .injectTouch({
+                    action: androidAction,
+                    pointerId: BigInt(0),
+                    pointerX: x,
+                    pointerY: y,
+                    videoWidth: videoWidth,
+                    videoHeight: videoHeight,
+                    pressure: pressure,
+                    actionButton: buttons,
+                    buttons: buttons,
+                })
+                .catch((error) => console.error('Error sending touch event:', error));
         } catch (error) {
             console.error('Error sending touch event:', error);
         }
@@ -383,12 +452,14 @@ export class ScrcpyService {
                     return;
             }
 
-            this.controller.injectKeyCode({
-                action: androidAction,
-                keyCode: keyCode as AndroidKeyCode,
-                repeat: 0,
-                metaState: metaState as AndroidKeyEventMeta,
-            });
+            this.controller
+                .injectKeyCode({
+                    action: androidAction,
+                    keyCode: keyCode as AndroidKeyCode,
+                    repeat: 0,
+                    metaState: metaState as AndroidKeyEventMeta,
+                })
+                .catch((error) => console.error('Error sending key event:', error));
         } catch (error) {
             console.error('Error sending key event:', error);
         }
@@ -403,7 +474,9 @@ export class ScrcpyService {
         try {
             const powerMode =
                 mode === 0 ? AndroidScreenPowerMode.Off : AndroidScreenPowerMode.Normal;
-            this.controller.setScreenPowerMode(powerMode);
+            this.controller
+                .setScreenPowerMode(powerMode)
+                .catch((error) => console.error('Error setting screen power mode:', error));
         } catch (error) {
             console.error('Error setting screen power mode:', error);
         }
@@ -434,15 +507,17 @@ export class ScrcpyService {
             const scrollX = Math.max(-1, Math.min(1, -deltaX / 120));
             const scrollY = Math.max(-1, Math.min(1, -deltaY / 120));
 
-            this.controller.injectScroll({
-                pointerX: Math.round(x),
-                pointerY: Math.round(y),
-                videoWidth: videoWidth,
-                videoHeight: videoHeight,
-                scrollX: scrollX,
-                scrollY: scrollY,
-                buttons: 0,
-            });
+            this.controller
+                .injectScroll({
+                    pointerX: Math.round(x),
+                    pointerY: Math.round(y),
+                    videoWidth: videoWidth,
+                    videoHeight: videoHeight,
+                    scrollX: scrollX,
+                    scrollY: scrollY,
+                    buttons: 0,
+                })
+                .catch((error) => console.error('Error sending scroll event:', error));
         } catch (error) {
             console.error('Error sending scroll event:', error);
         }
@@ -469,6 +544,8 @@ export class ScrcpyService {
     stop(): void {
         this.isRunning = false;
         this.currentDeviceId = null;
+        this.ptsBase = null;
+        this.lastPts = 0;
 
         // Abort any pending stream reads
         if (this.streamAbortController) {
@@ -485,6 +562,11 @@ export class ScrcpyService {
             this.scrcpyClient.close().catch(console.error);
             this.scrcpyClient = null;
         }
+
+        // Before dropping the handle: a command routed to a dead socket cannot fall
+        // back, since it may already have run.
+        this.unregisterSocket?.();
+        this.unregisterSocket = null;
 
         this.adb = null;
         this.adbClient = null;
