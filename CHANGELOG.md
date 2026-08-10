@@ -2,47 +2,48 @@
 
 ## [1.2.0] - 2026-08-09
 
-The biggest release so far: a real zoom control, screenshots that land straight on
-your clipboard, and a top-to-bottom performance pass that touches the video path,
-the log viewers, and every ADB call the extension makes.
+Introduces an independent zoom and pan control, direct-to-clipboard screenshot
+capture, and a broad performance overhaul spanning the video pipeline, log viewers,
+and every ADB operation performed by the extension.
 
-### 🔍 Dedicated Zoom & Pan
+### 🔍 Zoom & Pan
 
-Closes [#3](https://github.com/Aradhya1905/vscode-scrcpy/issues/3) — the mirror no
-longer leans on VS Code's own display scaling. It has its own zoom.
+Closes [#3](https://github.com/Aradhya1905/vscode-scrcpy/issues/3). The extension now
+provides its own zoom control.
 
 ![Dedicated zoom control](https://raw.githubusercontent.com/Aradhya1905/vscode-scrcpy/main/images/zoom-button.png)
 
-- **Zoom HUD** — `+` / `−` buttons with a live percentage readout and a **Reset**
-  button. It fades out 2.5s after your last change and stays put while your pointer
-  is over it.
-- **Familiar zoom steps** — the same ladder Chrome and Edge use (100% → 110% → 125%
-  → 133% …), from **25% up to 400%**.
-- **Ctrl + scroll wheel** zooms toward the pointer instead of scrolling the device.
-- **Alt + left-drag** or **middle-drag** pans the zoomed view. The cursor switches to
-  a grab handle the moment Alt goes down, so you can see the pan is armed.
-- **Your zoom level is remembered** across sessions.
+- **Zoom HUD**: `+` / `−` controls with a live percentage readout and a **Reset**
+  action. The HUD fades 2.5s after the last change and remains visible while the
+  pointer hovers over it.
+- **Standard zoom steps**: the browser-standard ladder (100% → 110% → 125% → 133% …),
+  spanning **25% to 400%**.
+- **Ctrl + scroll wheel** zooms toward the pointer rather than scrolling the device.
+- **Alt + left-drag** and **middle-drag** pan the zoomed view. The cursor changes to a
+  grab handle as soon as Alt is pressed to indicate that panning is armed.
+- **Zoom level persists** across sessions.
 
-Pan and zoom are driven imperatively rather than through React state, so dragging
-around a zoomed screen costs no re-renders and no layout thrash.
+Pan and zoom are applied imperatively rather than through React state, so dragging a
+zoomed view incurs no re-renders or layout thrash.
 
-### 📸 Screenshots Straight to the Clipboard
+### 📸 Clipboard Screenshots
 
-- The camera button now **copies the screenshot to your clipboard** and shows a
-  confirmation toast — no more save dialog interrupting every capture.
-- The icon spins while the capture is in flight, so you know it's working.
-- Captures at full device resolution, independent of your mirror quality setting.
+- The capture action now **copies the screenshot to the system clipboard** and
+  confirms with a toast, removing the save dialog from the capture flow.
+- The icon animates for the duration of the capture to indicate progress.
+- Captures always use full device resolution, independent of the mirror quality
+  setting.
 
 ### ✨ Features
 
-- **Persistent Mirroring** — a settings toggle that keeps the mirror session alive
-  when the sidebar is hidden, so switching away and back resumes instantly instead
-  of reconnecting.
-- **Device skins fit the panel** — the phone frame now scales to whatever space the
-  panel has, instead of being pinned to a fixed 630px.
-- **Reworked toolbar and empty states** — clearer connection status and dedicated
+- **Persistent mirroring**: an opt-in setting that keeps the mirror session alive
+  while the sidebar is hidden, allowing an instant resume instead of a full
+  reconnect.
+- **Responsive device skins**: the phone frame now scales to the available panel
+  space instead of a fixed 630px width.
+- **Reworked toolbar and empty states**: clearer connection status with dedicated
   surfaces for the disconnected, connecting, and error cases.
-- **Theme-aware styling** — the UI now follows your VS Code theme through a proper
+- **Theme-aware styling**: the UI now follows the active VS Code theme through a
   design-token layer.
 
 ### ⚡ Performance
@@ -51,51 +52,51 @@ This release reworks how video, logs, and ADB traffic move through the extension
 
 **Video pipeline**
 
-- Frames travel as raw transferable `ArrayBuffer`s, one per access unit — no base64
-  hop, no per-byte decoding on the main thread.
+- Frames are transferred as raw `ArrayBuffer`s, one per access unit, eliminating the
+  base64 encoding hop and per-byte decoding on the main thread.
 - Presentation is paced on `requestAnimationFrame`, and every `VideoFrame` is
-  explicitly closed, removing a steady GPU memory leak during long sessions.
-- The webview now tells the extension when its decode queue is saturated; the
-  extension drops to keyframes only until it recovers, so the picture degrades
-  gracefully instead of falling behind.
-- The decoder probes for a working configuration instead of assuming one, fixing
+  explicitly closed, resolving a steady GPU memory leak during long sessions.
+- The webview reports decode-queue saturation to the extension, which falls back to
+  keyframes only until the queue recovers, degrading quality gracefully rather than
+  accumulating latency.
+- The decoder probes for a supported configuration instead of assuming one, fixing
   black-screen starts on some devices.
-- A single stream watchdog replaces the per-packet read timeout.
+- A single stream watchdog replaces the previous per-packet read timeout.
 
-**ADB & device data**
+**ADB and device data**
 
-- One-shot ADB commands ride the **existing mirror connection** while streaming —
-  no new process, no handshake, no reconnect per command.
-- The installed-app list is rebuilt from **two** ADB calls instead of one per
-  package, cutting a multi-second stall down to a blink.
+- One-shot ADB commands reuse the **existing mirror connection** while streaming,
+  avoiding a new process, handshake, and reconnect per command.
+- The installed-app list is built from **two** ADB calls instead of one per package,
+  reducing a multi-second stall to near-instant.
 - Device-info polling is tiered, and the device list is no longer re-enumerated on
-  every tick.
+  every poll.
 
-**Logs & rendering**
+**Logs and rendering**
 
 - Logcat and shell log lists are **virtualized**, with debounced search and memoized
-  rows — long log sessions no longer bog the UI down.
-- Logcat entries are batched into one IPC message per tick rather than one per line.
+  rows, keeping long log sessions responsive.
+- Logcat entries are batched into a single IPC message per tick rather than one
+  message per line.
 
 **Startup**
 
-- Each view and the entire scrcpy protocol stack load **on demand**, so activating
-  the sidebar no longer parses the full protocol bundle up front.
-- Hidden webview surfaces stop doing work entirely instead of rendering into
-  nothing.
+- Views and the scrcpy protocol stack are loaded **on demand**, so activating the
+  sidebar no longer parses the full protocol bundle up front.
+- Hidden webview surfaces suspend work entirely instead of rendering off-screen.
 
 ### 🐛 Bug Fixes
 
 - Fixed the video decoder failing to resync when persistent mirroring resumed.
-- Fixed the device skin being sized to a hardcoded 630px rather than the panel.
-- Fixed a stream resync gap after buffer overflow.
+- Fixed the device skin being sized to a hardcoded 630px instead of the panel.
+- Fixed a stream resync gap following buffer overflow.
 
 ### 🧹 Removed
 
 - **Network Inspector** placeholder. Capturing app traffic requires a MITM proxy and
-  a trusted CA, and Android 7+ apps ignore user-installed CAs — it could never have
-  worked for the apps people would point it at, so the "coming soon" entry is gone
-  rather than left dangling.
+  a trusted CA, and Android 7+ applications ignore user-installed CAs. The feature
+  could not work as intended for the relevant apps, so the placeholder entry has been
+  removed rather than left pending.
 
 ## [1.1.0] - 2026-01-10
 
